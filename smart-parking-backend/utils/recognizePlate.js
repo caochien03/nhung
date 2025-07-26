@@ -4,7 +4,7 @@ const path = require("path");
 async function recognizePlate(base64Image) {
     return new Promise((resolve, reject) => {
         const python = spawn("python3", [
-            path.join(__dirname, "../recognize_plate.py"),
+            path.join(__dirname, "../recognize_plate_paddle.py"),
         ]);
         // Loại bỏ tiền tố data:image/jpeg;base64,
         const imgBuffer = Buffer.from(base64Image.split(",")[1], "base64");
