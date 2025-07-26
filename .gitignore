@@ -1,0 +1,75 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Production builds
+dist/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ESP32 PlatformIO
+.pio/
+.vscode/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Model files (too large for Git)
+*.pth
+*.onnx
+*.pb
+*.tflite
+*.h5
+*.hdf5
+
+# Captured images
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+capture.jpg 
