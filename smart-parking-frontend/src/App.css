@@ -1,0 +1,15 @@
+.container {
+    display: flex;
+    flex-direction: row; /* Dàn ngang */
+    height: 100vh;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 24px;
+}
+.column {
+    flex: 1;
+    min-width: 320px;
+    max-width: 400px;
+    padding: 16px;
+    box-sizing: border-box;
+}

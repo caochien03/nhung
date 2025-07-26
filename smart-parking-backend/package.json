@@ -1,0 +1,22 @@
+{
+    "name": "smart-parking-backend",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "start": "node app.js",
+        "dev": "nodemon app.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "body-parser": "^2.2.0",
+        "cors": "^2.8.5",
+        "express": "^5.1.0",
+        "mongoose": "^8.16.4"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.10"
+    }
+}
