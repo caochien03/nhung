@@ -1,40 +1,21 @@
 const WebSocket = require("ws");
+const esp32Controller = require("./controllers/esp32Controller");
 
 function setupWebSocket(server) {
     const wss = new WebSocket.Server({ server });
-
-    console.log("WebSocket server started");
+    const clients = [];
 
     wss.on("connection", (ws) => {
-        console.log("Client connected to WebSocket");
-
-        ws.on("message", (message) => {
-            try {
-                const data = JSON.parse(message);
-                console.log("Received WebSocket message:", data);
-
-                // Broadcast message to all connected clients
-                wss.clients.forEach((client) => {
-                    if (client !== ws && client.readyState === WebSocket.OPEN) {
-                        client.send(
-                            JSON.stringify({
-                                type: "auto_capture",
-                                cameraIndex: data.cameraIndex,
-                                uid: data.uid,
-                            })
-                        );
-                    }
-                });
-            } catch (error) {
-                console.error("Error parsing WebSocket message:", error);
-            }
-        });
+        clients.push(ws);
+        esp32Controller.setWsClients(clients);
 
         ws.on("close", () => {
-            console.log("Client disconnected from WebSocket");
+            const idx = clients.indexOf(ws);
+            if (idx !== -1) clients.splice(idx, 1);
         });
     });
 
+    console.log("WebSocket server started");
     return wss;
 }
 

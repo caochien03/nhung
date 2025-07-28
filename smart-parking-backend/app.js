@@ -4,6 +4,8 @@ const bodyParser = require("body-parser");
 const parkingRoutes = require("./routes/parking");
 const esp32Routes = require("./routes/esp32Routes");
 const connectDB = require("./config/db");
+const http = require("http");
+const setupWebSocket = require("./websocket");
 
 const app = express();
 const PORT = 8080;
@@ -30,4 +32,8 @@ app.get("/", (req, res) => {
 // Kết nối MongoDB
 connectDB();
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Tạo http server và websocket
+const server = http.createServer(app);
+setupWebSocket(server);
+
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

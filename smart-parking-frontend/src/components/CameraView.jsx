@@ -1,6 +1,15 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, {
+    useRef,
+    useEffect,
+    useState,
+    forwardRef,
+    useImperativeHandle,
+} from "react";
 
-function CameraView({ title, cameraIndex = 0, onPlateDetected }) {
+const CameraView = forwardRef(function CameraView(
+    { title, cameraIndex = 0, onPlateDetected },
+    ref
+) {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const [licensePlate, setLicensePlate] = useState("[Biển số]");
@@ -81,6 +90,131 @@ function CameraView({ title, cameraIndex = 0, onPlateDetected }) {
             sendToBackend(imageData);
         }
     };
+
+    // Hàm tự động chụp ảnh khi nhận signal WebSocket
+    const autoCaptureFromWS = async (uid, cameraIndex) => {
+        if (videoRef.current && canvasRef.current) {
+            const canvas = canvasRef.current;
+            const context = canvas.getContext("2d");
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+            context.drawImage(videoRef.current, 0, 0);
+            const imageData = canvas.toDataURL("image/jpeg");
+            setIsLoading(true);
+            try {
+                // Gửi ảnh + UID lên backend
+                const response = await fetch(
+                    "http://localhost:8080/api/esp32/auto-capture",
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            uid,
+                            cameraIndex,
+                            imageData,
+                        }),
+                    }
+                );
+                const result = await response.json();
+
+                // Xử lý các loại response khác nhau
+                if (result.action === "OUT_SECURITY_ALERT") {
+                    // Cảnh báo bảo mật - biển số không khớp
+                    setLicensePlate(
+                        `🚨 CẢNH BÁO: Biển số không khớp!\n` +
+                            `Vào: ${result.entryPlate}\n` +
+                            `Ra: ${result.exitPlate}\n` +
+                            `Độ giống: ${result.similarity}`
+                    );
+                } else if (result.action === "OUT") {
+                    // Xe ra thành công - hiển thị thông tin tính tiền
+                    setLicensePlate(
+                        `✅ Xe ra thành công!\n` +
+                            `Biển số: ${result.exitPlate}\n` +
+                            `Thời gian đỗ: ${result.parkingDuration}\n` +
+                            `Tính phí theo: ${result.billingHours}\n` +
+                            `Phí: ${result.fee}`
+                    );
+                } else if (result.action === "OUT_ERROR") {
+                    // Không tìm thấy record vào
+                    setLicensePlate(
+                        `❌ Lỗi: ${result.error}\n` +
+                            `Biển số: ${
+                                result.licensePlate || "Không nhận diện được"
+                            }`
+                    );
+                } else {
+                    // Xe vào hoặc trường hợp khác
+                    setLicensePlate(
+                        result.licensePlate ||
+                            result.exitPlate ||
+                            "Không nhận diện được"
+                    );
+                }
+
+                // Gọi callback để cập nhật App.jsx nếu có
+                if (onPlateDetected) {
+                    // Chỉ gửi object cho camera RA (cameraIndex = 2), camera VÀO vẫn gửi string
+                    if (cameraIndex === 2) {
+                        // Camera RA - gửi object để tách thông tin
+                        let callbackData = {};
+                        if (result.action === "OUT_SECURITY_ALERT") {
+                            callbackData = {
+                                licensePlate: result.exitPlate,
+                                status: "🚨 CẢNH BÁO: Biển số không khớp!",
+                                details: `Vào: ${result.entryPlate} | Ra: ${result.exitPlate} | Độ giống: ${result.similarity}`,
+                                parkingDuration: null,
+                                fee: null,
+                            };
+                        } else if (result.action === "OUT") {
+                            callbackData = {
+                                licensePlate: result.exitPlate,
+                                status: "✅ Xe ra thành công!",
+                                details: `Tính phí theo: ${result.billingHours}`,
+                                parkingDuration: result.parkingDuration,
+                                fee: result.fee,
+                            };
+                        } else if (result.action === "OUT_ERROR") {
+                            callbackData = {
+                                licensePlate:
+                                    result.licensePlate ||
+                                    "Không nhận diện được",
+                                status: "❌ Lỗi: " + result.error,
+                                details: null,
+                                parkingDuration: null,
+                                fee: null,
+                            };
+                        } else {
+                            callbackData = {
+                                licensePlate:
+                                    result.licensePlate ||
+                                    result.exitPlate ||
+                                    "",
+                                status: null,
+                                details: null,
+                                parkingDuration: null,
+                                fee: null,
+                            };
+                        }
+                        onPlateDetected(callbackData);
+                    } else {
+                        // Camera VÀO - gửi string như cũ
+                        onPlateDetected(
+                            result.licensePlate || result.exitPlate || ""
+                        );
+                    }
+                }
+            } catch {
+                setLicensePlate("Lỗi gửi tự động!");
+            } finally {
+                setIsLoading(false);
+            }
+        }
+    };
+
+    useImperativeHandle(ref, () => ({
+        autoCaptureFromWS,
+    }));
 
     const sendToBackend = async (imageData) => {
         setIsLoading(true);
@@ -175,17 +309,20 @@ function CameraView({ title, cameraIndex = 0, onPlateDetected }) {
             </button>
             <div
                 style={{
-                    minHeight: 32,
+                    minHeight: 60,
                     border: "1px solid #aaa",
                     background: "#fff",
                     textAlign: "center",
-                    lineHeight: "32px",
+                    padding: "8px",
+                    fontSize: "14px",
+                    whiteSpace: "pre-line", // Cho phép xuống dòng với \n
+                    lineHeight: "1.4",
                 }}
             >
                 <span style={{ color: "#333" }}>{licensePlate}</span>
             </div>
         </div>
     );
-}
+});
 
 export default CameraView;

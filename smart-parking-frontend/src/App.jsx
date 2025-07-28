@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import CameraView from "./components/CameraView";
 import ParkingInfo from "./components/ParkingInfo";
 import ControlPanel from "./components/ControlPanel";
@@ -13,6 +13,122 @@ function App() {
     const [mode, setMode] = useState("auto");
     const [cameraInPlate, setCameraInPlate] = useState("[Biển số]");
     const [cameraOutPlate, setCameraOutPlate] = useState("[Biển số]");
+
+    // State mới để lưu thông tin tách biệt
+    const [exitStatus, setExitStatus] = useState("");
+    const [exitDetails, setExitDetails] = useState("");
+    const [currentParkingDuration, setCurrentParkingDuration] = useState("");
+    const [currentFee, setCurrentFee] = useState("");
+
+    // Hàm xử lý callback từ camera RA
+    const handleCameraOutData = (data) => {
+        if (typeof data === "object" && data !== null) {
+            // Dữ liệu mới (object)
+            setCameraOutPlate(data.licensePlate || "[Biển số]");
+            setExitStatus(data.status || "");
+            setExitDetails(data.details || "");
+            setCurrentParkingDuration(data.parkingDuration || "");
+            setCurrentFee(data.fee || "");
+
+            // Cập nhật dòng RA real-time với thông tin đầy đủ
+            if (data.status && data.status.includes("✅")) {
+                // Xe ra thành công - cập nhật thông tin đầy đủ
+                setLastOut(
+                    data.exitInfo ||
+                        `${data.licensePlate} - ${
+                            data.timeOutFormatted ||
+                            new Date().toLocaleTimeString("vi-VN", {
+                                hour12: false,
+                            })
+                        }`
+                );
+
+                // Cập nhật dòng VÀO với thông tin từ backend nếu có
+                if (data.entryInfo) {
+                    setLastIn(data.entryInfo);
+                }
+
+                // Cập nhật tổng tiền
+                if (data.feeNumber) {
+                    setTotalMoney((prev) => prev + data.feeNumber);
+                } else if (data.fee) {
+                    const feeNumber =
+                        parseInt(data.fee.replace(/[^\d]/g, "")) || 0;
+                    setTotalMoney((prev) => prev + feeNumber);
+                }
+            } else if (data.status) {
+                // Có trạng thái khác (cảnh báo, lỗi)
+                const timeStr =
+                    data.timeOutFormatted ||
+                    new Date().toLocaleTimeString("vi-VN", { hour12: false });
+                setLastOut(
+                    `${data.licensePlate} - ${timeStr} (${data.status
+                        .substring(2)
+                        .trim()})`
+                );
+
+                // Vẫn cập nhật thông tin vào nếu có
+                if (data.entryInfo) {
+                    setLastIn(data.entryInfo);
+                }
+            }
+        } else {
+            // Dữ liệu cũ (string) - để tương thích
+            setCameraOutPlate(data || "[Biển số]");
+        }
+    };
+
+    // Hàm xử lý callback từ camera VÀO
+    const handleCameraInData = (data) => {
+        if (typeof data === "string") {
+            setCameraInPlate(data || "[Biển số]");
+
+            // Cập nhật dòng VÀO real-time
+            if (data && data !== "[Biển số]" && data !== "") {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString("vi-VN", {
+                    hour12: false,
+                });
+                setLastIn(`${data} - ${timeStr}`);
+
+                // Tăng số xe
+                setVehicleCount((prev) => prev + 1);
+            }
+        }
+    };
+
+    // Tham chiếu tới CameraView để gọi hàm chụp ảnh tự động
+    const cameraInRef = useRef();
+    const cameraOutRef = useRef();
+
+    // WebSocket tự động chụp ảnh khi nhận signal
+    useEffect(() => {
+        const ws = new window.WebSocket("ws://localhost:8080"); // Đổi thành localhost
+        ws.onopen = () => {
+            console.log("WebSocket connected");
+        };
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === "auto_capture") {
+                // Chọn camera phù hợp
+                if (data.cameraIndex === 1 && cameraInRef.current) {
+                    cameraInRef.current.autoCaptureFromWS(
+                        data.uid,
+                        data.cameraIndex
+                    );
+                } else if (data.cameraIndex === 2 && cameraOutRef.current) {
+                    cameraOutRef.current.autoCaptureFromWS(
+                        data.uid,
+                        data.cameraIndex
+                    );
+                }
+            }
+        };
+        ws.onclose = () => {
+            console.log("WebSocket disconnected");
+        };
+        return () => ws.close();
+    }, []);
 
     // Load dữ liệu ban đầu từ backend
     useEffect(() => {
@@ -163,16 +279,18 @@ function App() {
         <div className="container">
             <div className="column">
                 <CameraView
+                    ref={cameraInRef}
                     title="CAMERA VÀO"
                     cameraIndex={1}
-                    onPlateDetected={setCameraInPlate}
+                    onPlateDetected={handleCameraInData}
                 />
             </div>
             <div className="column">
                 <CameraView
+                    ref={cameraOutRef}
                     title="CAMERA RA"
                     cameraIndex={2}
-                    onPlateDetected={setCameraOutPlate}
+                    onPlateDetected={handleCameraOutData}
                 />
             </div>
             <div className="column">
@@ -182,6 +300,12 @@ function App() {
                     lastOut={lastOut}
                     parkingDuration={parkingDuration}
                     totalMoney={totalMoney}
+                    cameraInPlate={cameraInPlate}
+                    cameraOutPlate={cameraOutPlate}
+                    exitStatus={exitStatus}
+                    exitDetails={exitDetails}
+                    currentParkingDuration={currentParkingDuration}
+                    currentFee={currentFee}
                 />
                 <ControlPanel
                     onModeChange={handleModeChange}
