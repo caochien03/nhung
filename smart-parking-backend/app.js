@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const parkingRoutes = require("./routes/parking");
+const esp32Routes = require("./routes/esp32Routes");
 const connectDB = require("./config/db");
 
 const app = express();
@@ -19,6 +20,7 @@ app.use(bodyParser.json({ limit: "10mb" }));
 
 // Routes
 app.use("/api/parking", parkingRoutes);
+app.use("/api/esp32", esp32Routes);
 
 // Route test server
 app.get("/", (req, res) => {

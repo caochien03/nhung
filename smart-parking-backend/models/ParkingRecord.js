@@ -7,6 +7,7 @@ const ParkingRecordSchema = new mongoose.Schema({
     timeIn: Date,
     timeOut: Date,
     fee: Number,
+    cameraIndex: Number, // Thêm camera index
 });
 
 module.exports = mongoose.model("ParkingRecord", ParkingRecordSchema);

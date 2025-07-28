@@ -1,5 +1,5 @@
 const ParkingRecord = require("../models/ParkingRecord");
-const recognizePlate = require("../utils/recognizePlate");
+const recognizePlate = require("../utils/recognizePlate_fastapi");
 
 exports.createParkingRecord = async (req, res) => {
     try {

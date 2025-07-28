@@ -11,6 +11,11 @@ from paddleocr import PaddleOCR
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 warnings.filterwarnings("ignore", category=UserWarning)
 
+# Tạo model singleton - khởi tạo một lần duy nhất
+print("Đang khởi tạo PaddleOCR model...", file=sys.stderr)
+ocr = PaddleOCR(use_textline_orientation=True, lang='en')  # Dùng model tiếng Anh thay vì tiếng Trung
+print("PaddleOCR model đã sẵn sàng!", file=sys.stderr)
+
 def main():
     # Đọc dữ liệu ảnh từ stdin
     img_data = sys.stdin.buffer.read()
@@ -20,10 +25,7 @@ def main():
     # Bắt đầu đo thời gian
     start_time = time.time()
     
-    # Khởi tạo PaddleOCR với model tiếng Trung (hỗ trợ tốt cho biển số)
-    ocr = PaddleOCR(use_textline_orientation=True, lang='ch')
-    
-    # Nhận diện text
+    # Nhận diện text - sử dụng model đã khởi tạo
     results = ocr.predict(img)
     
     # Kết thúc đo thời gian
