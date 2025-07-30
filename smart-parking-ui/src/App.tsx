@@ -1,106 +1,166 @@
 import React from "react";
-import { Car, MapPin, Clock, Users } from "lucide-react";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import Layout from "./components/Layout";
+import LoginPage from "./pages/LoginPage";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import StaffDashboard from "./pages/staff/StaffDashboard";
+import UserDashboard from "./pages/user/UserDashboard";
 
-function App() {
+// Protected Route Component
+const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({ 
+  children, 
+  allowedRoles 
+}) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Đang tải...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    // Redirect to appropriate dashboard based on user role
+    switch (user.role) {
+      case "admin":
+        return <Navigate to="/admin/dashboard" replace />;
+      case "staff":
+        return <Navigate to="/staff/dashboard" replace />;
+      case "user":
+        return <Navigate to="/user/dashboard" replace />;
+      default:
+        return <Navigate to="/login" replace />;
+    }
+  }
+
+  return <>{children}</>;
+};
+
+// App Routes Component
+const AppRoutes: React.FC = () => {
+  const { user } = useAuth();
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Header */}
-      <header className="bg-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div className="flex items-center">
-              <Car className="h-8 w-8 text-blue-600 mr-3" />
-              <h1 className="text-2xl font-bold text-gray-900">Smart Parking</h1>
-            </div>
-            <nav className="hidden md:flex space-x-8">
-              <a href="#" className="text-gray-700 hover:text-blue-600 transition-colors">Dashboard</a>
-              <a href="#" className="text-gray-700 hover:text-blue-600 transition-colors">Parking Slots</a>
-              <a href="#" className="text-gray-700 hover:text-blue-600 transition-colors">Bookings</a>
-              <a href="#" className="text-gray-700 hover:text-blue-600 transition-colors">Settings</a>
-            </nav>
-          </div>
-        </div>
-      </header>
+    <Router>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/login" element={<LoginPage />} />
+        
+        {/* Admin Routes */}
+        <Route
+          path="/admin/*"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <Layout>
+                <Routes>
+                  <Route path="dashboard" element={<AdminDashboard />} />
+                  <Route path="*" element={<Navigate to="dashboard" replace />} />
+                </Routes>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Welcome Section */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">Welcome to Smart Parking System</h2>
-          <p className="text-gray-600 text-lg">
-            Manage your parking slots efficiently with real-time monitoring and smart booking system.
-          </p>
-        </div>
+        {/* Staff Routes */}
+        <Route
+          path="/staff/*"
+          element={
+            <ProtectedRoute allowedRoles={["staff"]}>
+              <Layout>
+                <Routes>
+                  <Route path="dashboard" element={<StaffDashboard />} />
+                  <Route path="*" element={<Navigate to="dashboard" replace />} />
+                </Routes>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center">
-              <div className="p-3 rounded-full bg-blue-100">
-                <Car className="h-6 w-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Slots</p>
-                <p className="text-2xl font-bold text-gray-900">24</p>
-              </div>
-            </div>
-          </div>
+        {/* User Routes */}
+        <Route
+          path="/user/*"
+          element={
+            <ProtectedRoute allowedRoles={["user"]}>
+              <Layout>
+                <Routes>
+                  <Route path="dashboard" element={<UserDashboard />} />
+                  <Route path="*" element={<Navigate to="dashboard" replace />} />
+                </Routes>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
 
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center">
-              <div className="p-3 rounded-full bg-green-100">
-                <MapPin className="h-6 w-6 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Available</p>
-                <p className="text-2xl font-bold text-gray-900">8</p>
-              </div>
-            </div>
-          </div>
+        {/* Default Route - Redirect based on user role */}
+        <Route
+          path="/"
+          element={
+            user ? (
+              <Navigate
+                to={
+                  user.role === "admin"
+                    ? "/admin/dashboard"
+                    : user.role === "staff"
+                    ? "/staff/dashboard"
+                    : "/user/dashboard"
+                }
+                replace
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
 
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center">
-              <div className="p-3 rounded-full bg-yellow-100">
-                <Clock className="h-6 w-6 text-yellow-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Occupied</p>
-                <p className="text-2xl font-bold text-gray-900">16</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center">
-              <div className="p-3 rounded-full bg-purple-100">
-                <Users className="h-6 w-6 text-purple-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Active Users</p>
-                <p className="text-2xl font-bold text-gray-900">12</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-xl font-bold text-gray-900 mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-              Book a Slot
-            </button>
-            <button className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors font-medium">
-              View Map
-            </button>
-            <button className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors font-medium">
-              Check Status
-            </button>
-          </div>
-        </div>
-      </main>
-    </div>
+        {/* Catch all route */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Router>
   );
-}
+};
+
+// Main App Component
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: "#363636",
+            color: "#fff",
+          },
+          success: {
+            duration: 3000,
+            iconTheme: {
+              primary: "#10B981",
+              secondary: "#fff",
+            },
+          },
+          error: {
+            duration: 5000,
+            iconTheme: {
+              primary: "#EF4444",
+              secondary: "#fff",
+            },
+          },
+        }}
+      />
+    </AuthProvider>
+  );
+};
 
 export default App;

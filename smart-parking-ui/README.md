@@ -1,108 +1,229 @@
-# Smart Parking UI
+# 🚀 Smart Parking System - Frontend
 
-A modern React application for Smart Parking System management with Tailwind CSS.
+## 📋 Tổng quan
 
-## 🚀 Features
+Frontend cho hệ thống Smart Parking với các tính năng quản lý bãi xe thông minh, tích hợp ESP32, nhận diện biển số và thanh toán tự động.
 
-- **Modern UI**: Built with React 18 and TypeScript
-- **Styling**: Tailwind CSS for beautiful, responsive design
-- **Icons**: Lucide React for consistent iconography
-- **Routing**: React Router for navigation
-- **HTTP Client**: Axios for API calls
+## 🎯 Tính năng chính
 
-## 📦 Installation
+### 👨‍💼 **Admin Dashboard**
+- Quản lý người dùng và nhân viên
+- Báo cáo doanh thu và thống kê
+- Giám sát hệ thống real-time
+- Xuất báo cáo Excel
 
-```bash
-cd smart-parking-ui
-npm install
-```
+### 👷‍♂️ **Staff Dashboard**
+- Hiển thị camera vào/ra trực tiếp
+- Quản lý thanh toán thủ công
+- Mở/đóng barie
+- Xem xe đang đỗ và phí cần thu
 
-## 🏃‍♂️ Running the Application
+### 👤 **User Dashboard**
+- Đăng ký biển số xe
+- Xem lịch sử gửi xe
+- Quản lý tài khoản và số dư
+- Thanh toán qua QR code
 
-```bash
-# Start development server
-npm start
+## 🛠️ Công nghệ sử dụng
 
-# Build for production
-npm run build
-
-# Run tests
-npm test
-```
-
-## 🛠️ Tech Stack
-
-- **React 18** - UI Library
-- **TypeScript** - Type Safety
+- **React 18** + TypeScript
 - **Tailwind CSS** - Styling
-- **Lucide React** - Icons
 - **React Router** - Navigation
-- **Axios** - HTTP Client
+- **Recharts** - Charts và biểu đồ
+- **React Hook Form** - Form handling
+- **React Hot Toast** - Notifications
+- **Lucide React** - Icons
+- **WebSocket** - Real-time communication
 
-## 📁 Project Structure
+## 📁 Cấu trúc dự án
 
 ```
 src/
-├── components/     # Reusable components
-├── pages/         # Page components
-├── hooks/         # Custom React hooks
-├── services/      # API services
-├── types/         # TypeScript type definitions
-├── utils/         # Utility functions
-└── assets/        # Static assets
+├── components/
+│   ├── dashboard/          # Dashboard components
+│   │   ├── DashboardOverview.tsx
+│   │   ├── CameraMonitor.tsx
+│   │   └── PaymentManager.tsx
+│   ├── forms/             # Form components
+│   ├── tables/            # Table components
+│   ├── charts/            # Chart components
+│   ├── ui/                # UI components
+│   │   ├── Button.tsx
+│   │   ├── Card.tsx
+│   │   └── index.ts
+│   └── Layout.tsx         # Main layout
+├── pages/
+│   ├── admin/             # Admin pages
+│   │   └── AdminDashboard.tsx
+│   ├── staff/             # Staff pages
+│   │   └── StaffDashboard.tsx
+│   ├── user/              # User pages
+│   │   └── UserDashboard.tsx
+│   └── LoginPage.tsx      # Login page
+├── services/
+│   ├── api.ts             # API services
+│   └── websocket.ts       # WebSocket service
+├── contexts/
+│   └── AuthContext.tsx    # Authentication context
+├── types/
+│   └── index.ts           # TypeScript types
+├── hooks/                 # Custom hooks
+├── utils/                 # Utility functions
+└── App.tsx                # Main app component
 ```
 
-## 🎨 Design System
+## 🚀 Cài đặt và chạy
 
-### Colors
-- **Primary**: Blue (#3b82f6)
-- **Secondary**: Gray (#64748b)
-- **Success**: Green (#10b981)
-- **Warning**: Yellow (#f59e0b)
-- **Error**: Red (#ef4444)
+### 1. Cài đặt dependencies
+```bash
+npm install
+```
 
-### Components
-- Cards with shadow and rounded corners
-- Responsive grid layouts
-- Hover effects and transitions
-- Consistent spacing and typography
+### 2. Chạy development server
+```bash
+npm start
+```
 
-## 🔧 Development
-
-### Adding New Components
-1. Create component in `src/components/`
-2. Use TypeScript interfaces for props
-3. Style with Tailwind CSS classes
-4. Add to storybook if needed
-
-### API Integration
-1. Create service in `src/services/`
-2. Use Axios for HTTP requests
-3. Handle loading and error states
-4. Type API responses
-
-## 📱 Responsive Design
-
-The application is fully responsive and works on:
-- Desktop (1024px+)
-- Tablet (768px - 1023px)
-- Mobile (320px - 767px)
-
-## 🚀 Deployment
-
+### 3. Build cho production
 ```bash
 npm run build
 ```
 
-The build output will be in the `build/` directory, ready for deployment.
+## 🔧 Cấu hình
+
+### Backend API
+- **URL**: http://localhost:8080
+- **WebSocket**: ws://localhost:8080
+
+### Environment Variables
+Tạo file `.env`:
+```env
+REACT_APP_API_URL=http://localhost:8080
+REACT_APP_WS_URL=ws://localhost:8080
+```
+
+## 👥 Tài khoản demo
+
+### Admin
+- **Username**: admin
+- **Password**: admin123
+- **Quyền**: Quản lý toàn bộ hệ thống
+
+### Staff
+- **Username**: staff
+- **Password**: staff123
+- **Quyền**: Quản lý bãi xe và thanh toán
+
+### User
+- **Username**: user
+- **Password**: user123
+- **Quyền**: Xem thông tin cá nhân
+
+## 📱 Responsive Design
+
+Hệ thống được thiết kế responsive cho:
+- **Desktop** (1024px+)
+- **Tablet** (768px - 1023px)
+- **Mobile** (320px - 767px)
+
+## 🔌 Tích hợp ESP32
+
+### Camera Monitoring
+- Hiển thị feed từ 2 camera (vào/ra)
+- Real-time image capture
+- OCR nhận diện biển số
+
+### Barrie Control
+- Mở/đóng barie thủ công
+- Tự động mở khi nhận diện thành công
+- Status monitoring
+
+### RFID Integration
+- Nhận UID từ ESP32
+- Tự động tạo record parking
+- Tính phí chính xác
+
+## 💳 Hệ thống thanh toán
+
+### QR Code Payment
+- Tạo mã QR tự động
+- Tích hợp với các cổng thanh toán
+- Xác nhận thanh toán real-time
+
+### Cash Payment
+- Nhân viên xác nhận thanh toán
+- In hóa đơn
+- Cập nhật trạng thái
+
+### Balance Payment
+- Trừ từ số dư tài khoản
+- Tự động cập nhật
+- Lịch sử giao dịch
+
+## 📊 Báo cáo và thống kê
+
+### Dashboard Analytics
+- Doanh thu theo ngày/tuần/tháng
+- Số lượng xe vào/ra
+- Phân bố loại xe
+- Hiệu suất hệ thống
+
+### Export Reports
+- Excel format
+- PDF reports
+- Custom date ranges
+- Multiple export options
+
+## 🔒 Bảo mật
+
+- JWT Authentication
+- Role-based access control
+- Secure API communication
+- Input validation
+- XSS protection
+
+## 🚀 Deployment
+
+### Build Production
+```bash
+npm run build
+```
+
+### Serve Static Files
+```bash
+npx serve -s build
+```
+
+### Docker (Optional)
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+RUN npm run build
+EXPOSE 3000
+CMD ["npm", "start"]
+```
 
 ## 🤝 Contributing
 
-1. Create a feature branch
-2. Make your changes
-3. Test thoroughly
-4. Submit a pull request
+1. Fork repository
+2. Create feature branch
+3. Make changes
+4. Test thoroughly
+5. Submit pull request
 
 ## 📄 License
 
-MIT License
+MIT License - see LICENSE file for details
+
+## 📞 Support
+
+- **Email**: support@smartparking.com
+- **Documentation**: [Wiki](https://github.com/smartparking/docs)
+- **Issues**: [GitHub Issues](https://github.com/smartparking/issues)
+
+---
+
+**🎉 Chúc mừng! Hệ thống Smart Parking đã sẵn sàng!**
