@@ -1,13 +1,16 @@
 // Types for Smart Parking System
 
 export interface User {
-  id: string;
+  _id?: string;
+  id?: string;
   username: string;
   email: string;
   phone: string;
   role: "admin" | "staff" | "user";
-  licensePlates: string[];
+  licensePlates?: string[];
   balance: number;
+  isActive?: boolean;
+  lastLogin?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

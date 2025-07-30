@@ -4,7 +4,7 @@ import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import CameraMonitor from "../../components/dashboard/CameraMonitor";
 import PaymentManager from "../../components/dashboard/PaymentManager";
 import { DashboardStats, ParkingRecord } from "../../types";
-import { mockAPI } from "../../services/mockAPI";
+import { dashboardAPI, parkingAPI } from "../../services/api";
 import wsService from "../../services/websocket";
 
 const StaffDashboard: React.FC = () => {
@@ -28,8 +28,8 @@ const StaffDashboard: React.FC = () => {
   const loadDashboardData = async () => {
     try {
       const [statsResponse, parkingsResponse] = await Promise.all([
-        mockAPI.dashboard.getStats(),
-        mockAPI.parking.getActiveRecords(),
+        dashboardAPI.getStats(),
+        parkingAPI.getActiveRecords(),
       ]);
 
       if (statsResponse.success && statsResponse.data) {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
 import { DashboardStats, Revenue } from "../../types";
-import { mockAPI } from "../../services/mockAPI";
+import { dashboardAPI } from "../../services/api";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 
 const AdminDashboard: React.FC = () => {
@@ -23,8 +23,8 @@ const AdminDashboard: React.FC = () => {
   const loadDashboardData = async () => {
     try {
       const [statsResponse, revenueResponse] = await Promise.all([
-        mockAPI.dashboard.getStats(),
-        mockAPI.dashboard.getRevenue(),
+        dashboardAPI.getStats(),
+        dashboardAPI.getRevenue("week"),
       ]);
 
       if (statsResponse.success && statsResponse.data) {

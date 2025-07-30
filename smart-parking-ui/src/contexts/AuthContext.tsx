@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { User } from "../types";
-import { mockAuthAPI } from "../services/mockAPI";
+import { authAPI } from "../services/api";
 
 interface AuthContextType {
   user: User | null;
@@ -36,9 +36,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const token = localStorage.getItem("token");
       if (token) {
-        const response = await mockAuthAPI.getCurrentUser();
+        const response = await authAPI.getCurrentUser();
         if (response.success && response.data) {
-          setUser(response.data);
+          // Ensure user object has both _id and id for compatibility
+          const user = response.data;
+          if (user._id && !user.id) {
+            user.id = user._id;
+          }
+          setUser(user);
         } else {
           localStorage.removeItem("token");
         }
@@ -53,13 +58,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      const response = await mockAuthAPI.login({ username, password });
-      if (response.success && response.data) {
+      console.log("Attempting login with:", username);
+      const response = await authAPI.login({ username, password });
+      console.log("Login response:", response);
+      
+      if (response && response.success && response.data) {
+        console.log("Login successful, setting token and user");
         localStorage.setItem("token", response.data.token);
-        setUser(response.data.user);
+        // Ensure user object has both _id and id for compatibility
+        const user = response.data.user;
+        if (user._id && !user.id) {
+          user.id = user._id;
+        }
+        console.log("Setting user:", user);
+        setUser(user);
         return true;
+      } else {
+        console.log("Login failed - invalid response:", response);
+        return false;
       }
-      return false;
     } catch (error) {
       console.error("Login failed:", error);
       return false;
@@ -73,7 +90,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (userData: Partial<User>): Promise<boolean> => {
     try {
-      const response = await mockAuthAPI.register(userData);
+      const response = await authAPI.register(userData);
       if (response.success && response.data) {
         return true;
       }

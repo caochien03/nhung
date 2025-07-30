@@ -15,7 +15,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
 }) => {
   const { user, loading } = useAuth();
 
+  console.log("ProtectedRoute: user =", user, "loading =", loading, "allowedRoles =", allowedRoles);
+
   if (loading) {
+    console.log("ProtectedRoute: Still loading...");
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
@@ -27,10 +30,12 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
   }
 
   if (!user) {
+    console.log("ProtectedRoute: No user, redirecting to login");
     return <Navigate to="/login" replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
+    console.log("ProtectedRoute: User role not allowed, redirecting");
     // Redirect to appropriate dashboard based on user role
     switch (user.role) {
       case "admin":
@@ -44,6 +49,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
     }
   }
 
+  console.log("ProtectedRoute: Access granted");
   return <>{children}</>;
 };
 
@@ -107,18 +113,20 @@ const AppRoutes: React.FC = () => {
           path="/"
           element={
             user ? (
-              <Navigate
-                to={
-                  user.role === "admin"
-                    ? "/admin/dashboard"
-                    : user.role === "staff"
-                    ? "/staff/dashboard"
-                    : "/user/dashboard"
-                }
-                replace
-              />
+              (() => {
+                const redirectPath = user.role === "admin"
+                  ? "/admin/dashboard"
+                  : user.role === "staff"
+                  ? "/staff/dashboard"
+                  : "/user/dashboard";
+                console.log("Default route: User =", user.username, "Role =", user.role, "Redirecting to =", redirectPath);
+                return <Navigate to={redirectPath} replace />;
+              })()
             ) : (
-              <Navigate to="/login" replace />
+              (() => {
+                console.log("Default route: No user, redirecting to login");
+                return <Navigate to="/login" replace />;
+              })()
             )
           }
         />
