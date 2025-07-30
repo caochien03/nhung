@@ -79,8 +79,10 @@ const UserDashboard: React.FC = () => {
     }, 1000);
   };
 
-  const formatDuration = (timeIn: Date, timeOut: Date) => {
-    const duration = timeOut.getTime() - timeIn.getTime();
+  const formatDuration = (timeIn: Date | string, timeOut: Date | string) => {
+    const timeInDate = new Date(timeIn);
+    const timeOutDate = new Date(timeOut);
+    const duration = timeOutDate.getTime() - timeInDate.getTime();
     const hours = Math.floor(duration / (1000 * 60 * 60));
     const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
     return `${hours}h ${minutes}m`;
@@ -186,7 +188,7 @@ const UserDashboard: React.FC = () => {
                   <div>
                     <p className="font-medium text-gray-900">{vehicle.licensePlate}</p>
                     <p className="text-sm text-gray-600 capitalize">
-                      {vehicle.vehicleType} • Đăng ký: {vehicle.registrationDate.toLocaleDateString("vi-VN")}
+                      {vehicle.vehicleType} • Đăng ký: {new Date(vehicle.registrationDate).toLocaleDateString("vi-VN")}
                     </p>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -220,10 +222,10 @@ const UserDashboard: React.FC = () => {
               </div>
               <div className="space-y-2 text-sm">
                 <p className="text-blue-700">
-                  <span className="font-medium">Giờ vào:</span> {activeParking.timeIn.toLocaleTimeString("vi-VN", { hour12: false })}
+                  <span className="font-medium">Giờ vào:</span> {new Date(activeParking.timeIn).toLocaleTimeString("vi-VN", { hour12: false })}
                 </p>
                 <p className="text-blue-700">
-                  <span className="font-medium">Ngày:</span> {activeParking.timeIn.toLocaleDateString("vi-VN")}
+                  <span className="font-medium">Ngày:</span> {new Date(activeParking.timeIn).toLocaleDateString("vi-VN")}
                 </p>
                 <p className="text-blue-700">
                   <span className="font-medium">ID:</span> {activeParking.id.slice(-6)}
@@ -278,11 +280,11 @@ const UserDashboard: React.FC = () => {
                     {record.licensePlate}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {record.timeIn.toLocaleTimeString("vi-VN", { hour12: false })}
+                    {new Date(record.timeIn).toLocaleTimeString("vi-VN", { hour12: false })}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {record.timeOut 
-                      ? record.timeOut.toLocaleTimeString("vi-VN", { hour12: false })
+                      ? new Date(record.timeOut).toLocaleTimeString("vi-VN", { hour12: false })
                       : "-"
                     }
                   </td>

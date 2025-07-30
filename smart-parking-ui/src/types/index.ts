@@ -19,8 +19,8 @@ export interface ParkingRecord {
   id: string;
   rfid: string;
   licensePlate: string;
-  timeIn: Date;
-  timeOut?: Date;
+  timeIn: Date | string;
+  timeOut?: Date | string;
   fee?: number;
   cameraIndex: number;
   status: "active" | "completed" | "cancelled";
@@ -35,7 +35,7 @@ export interface Vehicle {
   userId: string;
   vehicleType: "car" | "truck" | "bus";
   isRegistered: boolean;
-  registrationDate: Date;
+  registrationDate: Date | string;
 }
 
 export interface Payment {

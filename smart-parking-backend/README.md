@@ -93,7 +93,7 @@ npm install
 Tạo file `.env`:
 ```env
 PORT=8080
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/parking
+MONGODB_URI=
 JWT_SECRET=your-secret-key
 FRONTEND_URL=http://localhost:3000
 NODE_ENV=development

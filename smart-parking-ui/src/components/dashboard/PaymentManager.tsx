@@ -56,8 +56,10 @@ const PaymentManager: React.FC<PaymentManagerProps> = ({ parkingRecord, onPaymen
     }
   };
 
-  const formatDuration = (timeIn: Date, timeOut: Date) => {
-    const duration = timeOut.getTime() - timeIn.getTime();
+  const formatDuration = (timeIn: Date | string, timeOut: Date | string) => {
+    const timeInDate = new Date(timeIn);
+    const timeOutDate = new Date(timeOut);
+    const duration = timeOutDate.getTime() - timeInDate.getTime();
     const hours = Math.floor(duration / (1000 * 60 * 60));
     const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
     return `${hours}h ${minutes}m`;
@@ -103,14 +105,14 @@ const PaymentManager: React.FC<PaymentManagerProps> = ({ parkingRecord, onPaymen
         <div>
           <p className="text-sm text-gray-600">Giờ vào</p>
           <p className="font-medium">
-            {parkingRecord.timeIn.toLocaleTimeString("vi-VN", { hour12: false })}
+            {new Date(parkingRecord.timeIn).toLocaleTimeString("vi-VN", { hour12: false })}
           </p>
         </div>
         <div>
           <p className="text-sm text-gray-600">Giờ ra</p>
           <p className="font-medium">
             {parkingRecord.timeOut 
-              ? parkingRecord.timeOut.toLocaleTimeString("vi-VN", { hour12: false })
+              ? new Date(parkingRecord.timeOut).toLocaleTimeString("vi-VN", { hour12: false })
               : "Chưa ra"
             }
           </p>

@@ -37,7 +37,13 @@ const StaffDashboard: React.FC = () => {
       }
 
       if (parkingsResponse.success && parkingsResponse.data) {
-        setActiveParkings(parkingsResponse.data);
+        // Convert date strings to Date objects for display
+        const processedParkings = parkingsResponse.data.map((parking: any) => ({
+          ...parking,
+          timeIn: new Date(parking.timeIn),
+          timeOut: parking.timeOut ? new Date(parking.timeOut) : undefined,
+        }));
+        setActiveParkings(processedParkings);
       }
     } catch (error) {
       console.error("Error loading dashboard data:", error);
@@ -49,7 +55,12 @@ const StaffDashboard: React.FC = () => {
   const setupWebSocket = () => {
     // Listen for new parking records
     wsService.subscribe("new_parking", (data: ParkingRecord) => {
-      setActiveParkings(prev => [data, ...prev]);
+      const processedData = {
+        ...data,
+        timeIn: new Date(data.timeIn),
+        timeOut: data.timeOut ? new Date(data.timeOut) : undefined,
+      };
+      setActiveParkings(prev => [processedData, ...prev]);
       setStats(prev => ({
         ...prev,
         activeParkings: prev.activeParkings + 1,
@@ -143,7 +154,7 @@ const StaffDashboard: React.FC = () => {
                       <div>
                         <p className="font-medium">{parking.licensePlate}</p>
                         <p className="text-sm text-gray-600">
-                          Vào: {parking.timeIn.toLocaleTimeString("vi-VN", { hour12: false })}
+                          Vào: {new Date(parking.timeIn).toLocaleTimeString("vi-VN", { hour12: false })}
                         </p>
                       </div>
                       <div className="text-right">
