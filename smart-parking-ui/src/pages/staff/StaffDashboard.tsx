@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { Car, DollarSign, Users, Clock } from "lucide-react";
+import { Car, DollarSign, Users, Clock, Camera, Lock } from "lucide-react";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import CameraMonitor from "../../components/dashboard/CameraMonitor";
 import PaymentManager from "../../components/dashboard/PaymentManager";
+import BarrieControl from "../../components/dashboard/BarrieControl";
+import CameraManagement from "../../components/dashboard/CameraManagement";
 import { DashboardStats, ParkingRecord } from "../../types";
 import { dashboardAPI, parkingAPI } from "../../services/api";
 import wsService from "../../services/websocket";
@@ -19,6 +21,7 @@ const StaffDashboard: React.FC = () => {
   const [activeParkings, setActiveParkings] = useState<ParkingRecord[]>([]);
   const [selectedParking, setSelectedParking] = useState<ParkingRecord | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"overview" | "cameras" | "barrie" | "payments">("overview");
 
   useEffect(() => {
     loadDashboardData();
@@ -94,7 +97,8 @@ const StaffDashboard: React.FC = () => {
     }));
     
     if (selectedParking) {
-      setActiveParkings(prev => prev.filter(p => p.id !== selectedParking.id));
+      const parkingId = selectedParking.id || selectedParking._id;
+      setActiveParkings(prev => prev.filter(p => (p.id || p._id) !== parkingId));
       setSelectedParking(null);
     }
   };
@@ -121,63 +125,183 @@ const StaffDashboard: React.FC = () => {
       {/* Stats Overview */}
       <DashboardOverview stats={stats} />
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Camera Monitoring */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <CameraMonitor cameraIndex={1} title="Camera vào" />
-            <CameraMonitor cameraIndex={2} title="Camera ra" />
-          </div>
+      {/* Tab Navigation */}
+      <div className="bg-white rounded-lg shadow-md">
+        <div className="border-b border-gray-200">
+          <nav className="flex space-x-8 px-6">
+            <button
+              onClick={() => setActiveTab("overview")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "overview"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              Tổng quan
+            </button>
+            <button
+              onClick={() => setActiveTab("cameras")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "cameras"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Camera className="h-4 w-4" />
+                <span>Camera</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab("barrie")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "barrie"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Lock className="h-4 w-4" />
+                <span>Barie</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab("payments")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "payments"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <DollarSign className="h-4 w-4" />
+                <span>Thanh toán</span>
+              </div>
+            </button>
+          </nav>
         </div>
 
-        {/* Payment Management */}
-        <div className="space-y-6">
-          {/* Active Parkings */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Xe đang đỗ</h3>
-            <div className="space-y-3">
-              {activeParkings.length === 0 ? (
-                <p className="text-gray-500 text-center py-4">Không có xe nào đang đỗ</p>
-              ) : (
-                activeParkings.map((parking) => (
-                  <div
-                    key={parking.id}
-                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                      selectedParking?.id === parking.id
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                    onClick={() => setSelectedParking(parking)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{parking.licensePlate}</p>
-                        <p className="text-sm text-gray-600">
-                          Vào: {new Date(parking.timeIn).toLocaleTimeString("vi-VN", { hour12: false })}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm text-gray-600">ID: {parking.id.slice(-6)}</p>
-                        {parking.fee && (
-                          <p className="font-medium text-green-600">
-                            {parking.fee.toLocaleString()} VND
-                          </p>
-                        )}
-                      </div>
-                    </div>
+        <div className="p-6">
+          {/* Overview Tab */}
+          {activeTab === "overview" && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Camera Monitoring */}
+              <div className="lg:col-span-2 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <CameraMonitor cameraIndex={1} title="Camera vào" />
+                  <CameraMonitor cameraIndex={2} title="Camera ra" />
+                </div>
+              </div>
+
+              {/* Active Parkings */}
+              <div className="space-y-6">
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Xe đang đỗ</h3>
+                  <div className="space-y-3">
+                    {activeParkings.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">Không có xe nào đang đỗ</p>
+                    ) : (
+                      activeParkings.map((parking) => (
+                        <div
+                          key={parking.id || parking._id}
+                          className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                            selectedParking?.id === parking.id || selectedParking?._id === parking._id
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 hover:border-gray-300"
+                          }`}
+                          onClick={() => setSelectedParking(parking)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium">{parking.licensePlate}</p>
+                              <p className="text-sm text-gray-600">
+                                Vào: {new Date(parking.timeIn).toLocaleTimeString("vi-VN", { hour12: false })}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm text-gray-600">ID: {parking.id ? parking.id.slice(-6) : parking._id ? parking._id.slice(-6) : 'N/A'}</p>
+                              {parking.fee && (
+                                <p className="font-medium text-green-600">
+                                  {parking.fee.toLocaleString()} VND
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                ))
+                </div>
+
+                {/* Payment Manager */}
+                {selectedParking && (
+                  <PaymentManager
+                    parkingRecord={selectedParking}
+                    onPaymentComplete={handlePaymentComplete}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Cameras Tab */}
+          {activeTab === "cameras" && (
+            <CameraManagement />
+          )}
+
+          {/* Barrie Tab */}
+          {activeTab === "barrie" && (
+            <BarrieControl />
+          )}
+
+          {/* Payments Tab */}
+          {activeTab === "payments" && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Quản lý thanh toán</h3>
+                <div className="space-y-3">
+                  {activeParkings.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">Không có xe nào cần thanh toán</p>
+                  ) : (
+                    activeParkings.map((parking) => (
+                      <div
+                        key={parking.id || parking._id}
+                        className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                          selectedParking?.id === parking.id || selectedParking?._id === parking._id
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                        onClick={() => setSelectedParking(parking)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{parking.licensePlate}</p>
+                            <p className="text-sm text-gray-600">
+                              Vào: {new Date(parking.timeIn).toLocaleTimeString("vi-VN", { hour12: false })}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-gray-600">ID: {parking.id ? parking.id.slice(-6) : parking._id ? parking._id.slice(-6) : 'N/A'}</p>
+                            {parking.fee && (
+                              <p className="font-medium text-green-600">
+                                {parking.fee.toLocaleString()} VND
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {selectedParking && (
+                <PaymentManager
+                  parkingRecord={selectedParking}
+                  onPaymentComplete={handlePaymentComplete}
+                />
               )}
             </div>
-          </div>
-
-          {/* Payment Manager */}
-          {selectedParking && (
-            <PaymentManager
-              parkingRecord={selectedParking}
-              onPaymentComplete={handlePaymentComplete}
-            />
           )}
         </div>
       </div>

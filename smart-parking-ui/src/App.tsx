@@ -6,6 +6,9 @@ import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import StaffDashboard from "./pages/staff/StaffDashboard";
+import StaffCameras from "./pages/staff/StaffCameras";
+import StaffBarrie from "./pages/staff/StaffBarrie";
+import StaffPayments from "./pages/staff/StaffPayments";
 import UserDashboard from "./pages/user/UserDashboard";
 
 // Protected Route Component
@@ -86,6 +89,9 @@ const AppRoutes: React.FC = () => {
               <Layout>
                 <Routes>
                   <Route path="dashboard" element={<StaffDashboard />} />
+                  <Route path="cameras" element={<StaffCameras />} />
+                  <Route path="barrie" element={<StaffBarrie />} />
+                  <Route path="payments" element={<StaffPayments />} />
                   <Route path="*" element={<Navigate to="dashboard" replace />} />
                 </Routes>
               </Layout>
@@ -132,7 +138,7 @@ const AppRoutes: React.FC = () => {
         />
 
         {/* Catch all route */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
   );

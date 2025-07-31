@@ -183,7 +183,7 @@ const UserDashboard: React.FC = () => {
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Xe của tôi</h3>
           <div className="space-y-4">
             {vehicles.map((vehicle) => (
-              <div key={vehicle.id} className="border border-gray-200 rounded-lg p-4">
+                              <div key={vehicle.id || vehicle._id} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-gray-900">{vehicle.licensePlate}</p>
@@ -228,7 +228,7 @@ const UserDashboard: React.FC = () => {
                   <span className="font-medium">Ngày:</span> {new Date(activeParking.timeIn).toLocaleDateString("vi-VN")}
                 </p>
                 <p className="text-blue-700">
-                  <span className="font-medium">ID:</span> {activeParking.id.slice(-6)}
+                  <span className="font-medium">ID:</span> {activeParking.id ? activeParking.id.slice(-6) : activeParking._id ? activeParking._id.slice(-6) : 'N/A'}
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-blue-200">
@@ -275,7 +275,7 @@ const UserDashboard: React.FC = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {parkingHistory.map((record) => (
-                <tr key={record.id} className="hover:bg-gray-50">
+                <tr key={record.id || record._id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {record.licensePlate}
                   </td>

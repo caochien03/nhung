@@ -12,6 +12,8 @@ const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
 const paymentRoutes = require("./routes/payments");
 const dashboardRoutes = require("./routes/dashboard");
+const barrieRoutes = require("./routes/barrie");
+const cameraRoutes = require("./routes/camera");
 
 // Import database and websocket
 const connectDB = require("./config/db");
@@ -69,6 +71,8 @@ app.use("/api/parking", parkingRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/esp32", esp32Routes);
+app.use("/api/barrie", barrieRoutes);
+app.use("/api/camera", cameraRoutes);
 
 // Root route
 app.get("/", (req, res) => {

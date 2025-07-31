@@ -10,7 +10,8 @@ import {
   Camera,
   CreditCard,
   FileText,
-  Home
+  Home,
+  Lock
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -35,25 +36,17 @@ const Sidebar: React.FC<SidebarProps> = ({ children }) => {
       case "admin":
         return [
           { path: "/admin/dashboard", label: "Dashboard", icon: Home },
-          { path: "/admin/users", label: "Quản lý người dùng", icon: Users },
-          { path: "/admin/vehicles", label: "Quản lý xe", icon: Car },
-          { path: "/admin/parking", label: "Quản lý bãi xe", icon: BarChart3 },
-          { path: "/admin/reports", label: "Báo cáo", icon: FileText },
-          { path: "/admin/settings", label: "Cài đặt", icon: Settings },
         ];
       case "staff":
         return [
           { path: "/staff/dashboard", label: "Dashboard", icon: Home },
           { path: "/staff/cameras", label: "Camera", icon: Camera },
+          { path: "/staff/barrie", label: "Barie", icon: Lock },
           { path: "/staff/payments", label: "Thanh toán", icon: CreditCard },
-          { path: "/staff/parking", label: "Bãi xe", icon: Car },
         ];
       case "user":
         return [
           { path: "/user/dashboard", label: "Dashboard", icon: Home },
-          { path: "/user/vehicles", label: "Xe của tôi", icon: Car },
-          { path: "/user/history", label: "Lịch sử", icon: FileText },
-          { path: "/user/profile", label: "Hồ sơ", icon: User },
         ];
       default:
         return [];

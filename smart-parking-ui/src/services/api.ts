@@ -79,6 +79,47 @@ export const esp32API = {
     api.post("/esp32/barrie", data),
 };
 
+// Barrie API
+export const barrieAPI = {
+  // Get all barries
+  getBarries: (): Promise<ApiResponse<any[]>> =>
+    api.get("/barrie"),
+
+  // Get barrie by ID
+  getBarrieById: (id: string): Promise<ApiResponse<any>> =>
+    api.get(`/barrie/${id}`),
+
+  // Control barrie
+  controlBarrie: (id: string, data: { action: "open" | "close"; reason?: string }): Promise<ApiResponse<any>> =>
+    api.post(`/barrie/${id}/control`, data),
+
+  // Get barrie status
+  getBarrieStatus: (): Promise<ApiResponse<any[]>> =>
+    api.get("/barrie/status/all"),
+};
+
+// Camera API
+export const cameraAPI = {
+  // Get all cameras
+  getCameras: (): Promise<ApiResponse<any[]>> =>
+    api.get("/camera"),
+  // Get camera by ID
+  getCameraById: (id: string): Promise<ApiResponse<any>> =>
+    api.get(`/camera/${id}`),
+
+  // Update camera status
+  updateCameraStatus: (id: string, data: { status?: string; lastImage?: string; notes?: string }): Promise<ApiResponse<any>> =>
+    api.put(`/camera/${id}/status`, data),
+
+  // Capture image
+  captureImage: (id: string, data: { imageData: string; licensePlate?: string }): Promise<ApiResponse<any>> =>
+    api.post(`/camera/${id}/capture`, data),
+
+  // Get camera status
+  getCameraStatus: (): Promise<ApiResponse<any[]>> =>
+    api.get("/camera/status/all"),
+};
+
 // Users API
 export const usersAPI = {
   // Get all users

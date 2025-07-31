@@ -16,7 +16,8 @@ export interface User {
 }
 
 export interface ParkingRecord {
-  id: string;
+  id?: string;
+  _id?: string;
   rfid: string;
   licensePlate: string;
   timeIn: Date | string;
@@ -30,7 +31,8 @@ export interface ParkingRecord {
 }
 
 export interface Vehicle {
-  id: string;
+  id?: string;
+  _id?: string;
   licensePlate: string;
   userId: string;
   vehicleType: "car" | "truck" | "bus";
@@ -39,7 +41,8 @@ export interface Vehicle {
 }
 
 export interface Payment {
-  id: string;
+  id?: string;
+  _id?: string;
   parkingRecordId: string;
   amount: number;
   method: "qr" | "cash" | "balance";
