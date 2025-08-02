@@ -126,6 +126,16 @@ const PaymentManager: React.FC<PaymentManagerProps> = ({ parkingRecord, onPaymen
           <p className="text-3xl font-bold text-blue-900">
             {parkingRecord.fee.toLocaleString()} VND
           </p>
+          {parkingRecord.feeType && (
+            <p className="text-sm text-blue-600 mt-1">
+              Loại phí: {parkingRecord.feeType}
+            </p>
+          )}
+          {parkingRecord.originalFee && parkingRecord.originalFee !== parkingRecord.fee && (
+            <p className="text-xs text-gray-500 mt-1">
+              Phí gốc: {parkingRecord.originalFee.toLocaleString()} VND
+            </p>
+          )}
         </div>
       </div>
 

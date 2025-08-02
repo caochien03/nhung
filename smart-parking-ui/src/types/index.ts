@@ -26,6 +26,7 @@ export interface ParkingRecord {
   timeOut?: Date | string;
   fee?: number;
   originalFee?: number;
+  feeType?: string; // Loại phí: "Theo giờ (35k)", "Qua đêm (50k)", "Miễn phí (Vé tháng)"
   subscriptionDiscount?: number;
   subscriptionId?: string;
   paymentType?: "hourly" | "subscription" | "mixed";

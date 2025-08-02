@@ -24,6 +24,9 @@ const ParkingRecordSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  feeType: {
+    type: String, // "Theo giờ (35k)", "Qua đêm (50k)", "Miễn phí (Vé tháng)"
+  },
   originalFee: {
     type: Number, // Phí gốc trước khi áp dụng vé tháng
   },

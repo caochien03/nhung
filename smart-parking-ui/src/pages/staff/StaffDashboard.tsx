@@ -315,10 +315,17 @@ const StaffDashboard: React.FC = () => {
                             </div>
                             <div className="text-right">
                               <p className="text-sm text-gray-600">ID: {parking.id ? parking.id.slice(-6) : parking._id ? parking._id.slice(-6) : 'N/A'}</p>
-                              {parking.fee && (
-                                <p className="font-medium text-green-600">
-                                  {parking.fee.toLocaleString()} VND
-                                </p>
+                              {parking.fee !== undefined && (
+                                <div>
+                                  <p className="font-medium text-green-600">
+                                    {parking.fee.toLocaleString()} VND
+                                  </p>
+                                  {parking.feeType && (
+                                    <p className="text-xs text-gray-500">
+                                      {parking.feeType}
+                                    </p>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -377,10 +384,17 @@ const StaffDashboard: React.FC = () => {
                           </div>
                           <div className="text-right">
                             <p className="text-sm text-gray-600">ID: {parking.id ? parking.id.slice(-6) : parking._id ? parking._id.slice(-6) : 'N/A'}</p>
-                            {parking.fee && (
-                              <p className="font-medium text-green-600">
-                                {parking.fee.toLocaleString()} VND
-                              </p>
+                            {parking.fee !== undefined && (
+                              <div>
+                                <p className="font-medium text-green-600">
+                                  {parking.fee.toLocaleString()} VND
+                                </p>
+                                {parking.feeType && (
+                                  <p className="text-xs text-gray-500">
+                                    {parking.feeType}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>

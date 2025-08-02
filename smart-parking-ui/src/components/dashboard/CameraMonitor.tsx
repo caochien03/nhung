@@ -18,6 +18,11 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
   const [licensePlate, setLicensePlate] = useState("[Biển số]");
   const [isLoading, setIsLoading] = useState(false);
   
+  // Thêm debouncing cho auto capture
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [lastCaptureTime, setLastCaptureTime] = useState(0);
+  const CAPTURE_COOLDOWN = 3000; // 3 giây cooldown
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -127,6 +132,13 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
       return; // Chỉ xử lý nếu đúng camera
     }
 
+    // Debouncing: Kiểm tra thời gian capture gần nhất
+    const now = Date.now();
+    if (isProcessing || (now - lastCaptureTime) < CAPTURE_COOLDOWN) {
+      console.log(`⏳ Đang xử lý hoặc trong cooldown period. Last capture: ${now - lastCaptureTime}ms ago`);
+      return;
+    }
+
     if (!videoRef.current) {
       console.log("❌ Video ref không tồn tại");
       return;
@@ -143,6 +155,8 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
     }
 
     console.log("✅ Bắt đầu auto capture...");
+    setIsProcessing(true);
+    setLastCaptureTime(now);
     
     if (videoRef.current && canvasRef.current) {
       const canvas = canvasRef.current;
@@ -283,6 +297,7 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
       setLicensePlate("Lỗi kết nối");
     } finally {
       setIsLoading(false);
+      setIsProcessing(false); // Reset processing state
     }
   };
 

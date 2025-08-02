@@ -3,6 +3,7 @@ const User = require("../models/User");
 const Vehicle = require("../models/Vehicle");
 const subscriptionController = require("./subscriptionController");
 const recognizePlate = require("../utils/recognizePlate_fastapi");
+const { calculateFeeWithSubscription } = require("../utils/feeCalculator");
 
 // Hàm tính độ tương đồng giữa 2 chuỗi (Levenshtein distance)
 function calculateSimilarity(str1, str2) {
@@ -43,6 +44,20 @@ let wsClients = [];
 exports.setWsClients = (clients) => {
     wsClients = clients;
 };
+
+// Cache để tránh duplicate processing
+const processingCache = new Map(); // uid -> { timestamp, processing: boolean }
+const PROCESSING_TIMEOUT = 5000; // 5 giây
+
+// Cleanup old cache entries
+setInterval(() => {
+    const now = Date.now();
+    for (const [uid, data] of processingCache.entries()) {
+        if (now - data.timestamp > PROCESSING_TIMEOUT) {
+            processingCache.delete(uid);
+        }
+    }
+}, 30000); // Cleanup mỗi 30 giây
 
 // Kiểm tra vé tháng và mở cổng
 exports.checkSubscriptionAndOpenGate = async (req, res) => {
@@ -134,6 +149,26 @@ exports.receiveUID = async (req, res) => {
 
         console.log(`Nhận UID từ ESP32: ${uid}, Camera: ${cameraIndex}`);
 
+        // Kiểm tra cache để tránh spam WebSocket messages
+        const cacheKey = `ws-${uid}-${cameraIndex}`;
+        const now = Date.now();
+        
+        if (processingCache.has(cacheKey)) {
+            const cached = processingCache.get(cacheKey);
+            if ((now - cached.timestamp) < 2000) { // 2 giây debounce cho WebSocket
+                console.log(`⏳ WebSocket message gần đây - UID: ${uid}, Camera: ${cameraIndex}`);
+                return res.json({
+                    message: "UID received successfully (cached)",
+                    uid: uid,
+                    cameraIndex: cameraIndex,
+                    timestamp: new Date(),
+                });
+            }
+        }
+
+        // Đánh dấu đã gửi WebSocket message
+        processingCache.set(cacheKey, { timestamp: now, processing: false });
+
         // Gửi signal tới tất cả frontend qua WebSocket
         wsClients.forEach((ws) => {
             if (ws.readyState === 1) {
@@ -164,6 +199,27 @@ exports.autoCapture = async (req, res) => {
         const { uid, cameraIndex, imageData } = req.body;
 
         console.log(`Tự động chụp ảnh - UID: ${uid}, Camera: ${cameraIndex}`);
+
+        // Kiểm tra cache để tránh duplicate processing
+        const cacheKey = `${uid}-${cameraIndex}`;
+        const now = Date.now();
+        
+        if (processingCache.has(cacheKey)) {
+            const cached = processingCache.get(cacheKey);
+            if (cached.processing || (now - cached.timestamp) < PROCESSING_TIMEOUT) {
+                console.log(`⏳ Đang xử lý hoặc đã xử lý gần đây - UID: ${uid}, Camera: ${cameraIndex}`);
+                return res.json({
+                    message: "Request ignored - already processing or recently processed",
+                    action: "IGNORED",
+                    uid: uid,
+                    cameraIndex: cameraIndex,
+                    timestamp: new Date(),
+                });
+            }
+        }
+
+        // Đánh dấu đang xử lý
+        processingCache.set(cacheKey, { timestamp: now, processing: true });
 
         // Nhận diện biển số từ ảnh
         let licensePlate = "";
@@ -289,32 +345,29 @@ exports.autoCapture = async (req, res) => {
                 }
                 durationDisplay += `${seconds}s`;
 
-                // Tính tiền dựa trên loại thanh toán
-                const parkingHours = Math.ceil(parkingDurationMs / (1000 * 60 * 60));
-                const hourlyRate = 10000; // 10,000 VND/giờ
-                const originalFee = parkingHours * hourlyRate;
+                // Tính phí sử dụng hàm mới
+                const hasSubscription = existingRecord.paymentType === "subscription";
+                const feeInfo = calculateFeeWithSubscription(
+                    existingRecord.timeIn, 
+                    timeOut, 
+                    hasSubscription
+                );
                 
-                let finalFee = 0;
-                let subscriptionDiscount = 0;
                 let paymentMethod = existingRecord.paymentMethod;
                 let paymentStatus = existingRecord.paymentStatus;
 
-                if (existingRecord.paymentType === "subscription") {
-                    // Sử dụng vé tháng - miễn phí
-                    finalFee = 0;
-                    subscriptionDiscount = originalFee;
+                if (hasSubscription) {
                     paymentMethod = "subscription";
                     paymentStatus = "paid";
                 } else {
-                    // Thanh toán theo giờ
-                    finalFee = originalFee;
                     paymentStatus = "pending";
                 }
 
                 existingRecord.timeOut = timeOut;
-                existingRecord.fee = finalFee;
-                existingRecord.originalFee = originalFee;
-                existingRecord.subscriptionDiscount = subscriptionDiscount;
+                existingRecord.fee = feeInfo.fee;
+                existingRecord.feeType = feeInfo.feeType;
+                existingRecord.originalFee = feeInfo.originalFee;
+                existingRecord.subscriptionDiscount = feeInfo.subscriptionDiscount || 0;
                 existingRecord.status = "completed";
                 existingRecord.paymentMethod = paymentMethod;
                 existingRecord.paymentStatus = paymentStatus;
@@ -339,14 +392,14 @@ exports.autoCapture = async (req, res) => {
                     }),
                     parkingDuration: durationDisplay,
                     parkingDurationMs: parkingDurationMs,
-                    parkingHours: `${parkingHours} giờ`,
-                    billingHours: `${parkingHours} giờ`,
-                    originalFee: `${originalFee.toLocaleString()} VND`,
-                    fee: finalFee > 0 ? `${finalFee.toLocaleString()} VND` : "MIỄN PHÍ (Vé tháng)",
-                    feeNumber: finalFee,
+                    parkingHours: `${feeInfo.parkingHours} giờ`,
+                    billingHours: feeInfo.feeType,
+                    originalFee: `${feeInfo.originalFee.toLocaleString()} VND`,
+                    fee: feeInfo.fee > 0 ? `${feeInfo.fee.toLocaleString()} VND` : "MIỄN PHÍ (Vé tháng)",
+                    feeNumber: feeInfo.fee,
                     paymentType: existingRecord.paymentType,
                     subscriptionUsed: existingRecord.paymentType === "subscription",
-                    subscriptionDiscount: subscriptionDiscount > 0 ? `${subscriptionDiscount.toLocaleString()} VND` : null,
+                    subscriptionDiscount: feeInfo.subscriptionDiscount > 0 ? `${feeInfo.subscriptionDiscount.toLocaleString()} VND` : null,
                     entryInfo: `${entryPlate} - ${timeIn.toLocaleTimeString(
                         "vi-VN",
                         { hour12: false }
@@ -372,6 +425,25 @@ exports.autoCapture = async (req, res) => {
         }
     } catch (err) {
         console.error("Lỗi khi tự động chụp:", err);
+        
+        // Reset processing state trong cache
+        const cacheKey = `${req.body.uid}-${req.body.cameraIndex}`;
+        if (processingCache.has(cacheKey)) {
+            processingCache.set(cacheKey, { 
+                timestamp: Date.now(), 
+                processing: false 
+            });
+        }
+        
         res.status(500).json({ error: err.message });
+    } finally {
+        // Đảm bảo reset processing state
+        const cacheKey = `${req.body.uid}-${req.body.cameraIndex}`;
+        if (processingCache.has(cacheKey)) {
+            processingCache.set(cacheKey, { 
+                timestamp: Date.now(), 
+                processing: false 
+            });
+        }
     }
 };
