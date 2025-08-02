@@ -11,6 +11,9 @@ exports.getStats = async (req, res) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    // **THÊM CAPACITY THÔNG TIN**
+    const MAX_PARKING_CAPACITY = 4; // Giới hạn 4 vị trí
+
     const [
       totalRevenue,
       todayRevenue,
@@ -62,6 +65,11 @@ exports.getStats = async (req, res) => {
       }),
     ]);
 
+    // **TÍNH TOÁN CAPACITY THÔNG TIN**
+    const occupancyRate = (activeParkings / MAX_PARKING_CAPACITY) * 100;
+    const availableSpots = MAX_PARKING_CAPACITY - activeParkings;
+    const isFullCapacity = activeParkings >= MAX_PARKING_CAPACITY;
+
     res.json({
       success: true,
       data: {
@@ -71,6 +79,15 @@ exports.getStats = async (req, res) => {
         totalVehicles: todayParkings, // Số xe vào hôm nay thay vì tổng xe đăng ký
         registeredUsers,
         walkInUsers,
+        // **THÊM CAPACITY THÔNG TIN**
+        parkingCapacity: {
+          current: activeParkings,
+          maximum: MAX_PARKING_CAPACITY,
+          available: availableSpots,
+          occupancyRate: Math.round(occupancyRate),
+          isFull: isFullCapacity,
+          status: isFullCapacity ? "FULL" : availableSpots <= 1 ? "ALMOST_FULL" : "AVAILABLE"
+        }
       },
     });
   } catch (error) {

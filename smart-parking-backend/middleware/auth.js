@@ -71,7 +71,7 @@ const authorizeRole = (...roles) => {
 
 // Generate JWT token
 const generateToken = (userId) => {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "24h" });
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "24H" }); 
 };
 
 module.exports = {

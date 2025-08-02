@@ -35,6 +35,20 @@ export interface ParkingRecord {
   paymentStatus: "pending" | "paid" | "failed";
   paymentMethod?: "qr" | "cash" | "balance" | "subscription";
   imageUrl?: string;
+  entryImage?: {
+    url: string;
+    publicId: string;
+    format: string;
+    width: number;
+    height: number;
+  };
+  exitImage?: {
+    url: string;
+    publicId: string;
+    format: string;
+    width: number;
+    height: number;
+  };
   isRegisteredUser?: boolean;
   currentDuration?: string; // Thời gian đỗ hiện tại (từ backend)
   notes?: string;
@@ -109,6 +123,15 @@ export interface DashboardStats {
   totalVehicles: number;
   registeredUsers: number;
   walkInUsers: number;
+  // **THÊM CAPACITY THÔNG TIN**
+  parkingCapacity?: {
+    current: number;
+    maximum: number;
+    available: number;
+    occupancyRate: number;
+    isFull: boolean;
+    status: "FULL" | "ALMOST_FULL" | "AVAILABLE";
+  };
 }
 
 export interface ApiResponse<T> {

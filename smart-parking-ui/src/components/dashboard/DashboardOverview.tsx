@@ -34,6 +34,20 @@ interface DashboardOverviewProps {
 }
 
 const DashboardOverview: React.FC<DashboardOverviewProps> = ({ stats }) => {
+  // **TÍNH TOÁN CAPACITY DISPLAY**
+  const capacityInfo = stats.parkingCapacity;
+  const capacityColor = capacityInfo?.isFull 
+    ? "bg-red-500" 
+    : capacityInfo?.status === "ALMOST_FULL" 
+    ? "bg-yellow-500" 
+    : "bg-green-500";
+  
+  const capacityStatus = capacityInfo?.isFull
+    ? "🚨 FULL"
+    : capacityInfo?.status === "ALMOST_FULL"
+    ? "⚠️ Gần đầy"
+    : "✅ Còn chỗ";
+
   const cards = [
     {
       title: "Doanh thu hôm nay",
@@ -43,11 +57,11 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ stats }) => {
       change: `Tổng: ${stats.totalRevenue.toLocaleString()} VND`,
     },
     {
-      title: "Xe đang đỗ",
-      value: stats.activeParkings,
+      title: capacityInfo ? `Bãi đỗ xe (${capacityInfo.current}/${capacityInfo.maximum})` : "Xe đang đỗ",
+      value: capacityInfo ? `${capacityInfo.available} chỗ trống` : stats.activeParkings,
       icon: Car,
-      color: "bg-blue-500",
-      change: "Đang hoạt động",
+      color: capacityColor,
+      change: capacityInfo ? `${capacityStatus} - ${capacityInfo.occupancyRate}% đầy` : "Đang hoạt động",
     },
     {
       title: "Xe vào hôm nay",

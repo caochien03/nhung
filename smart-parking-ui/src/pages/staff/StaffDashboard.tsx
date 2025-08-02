@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Car, DollarSign, Users, Clock, Camera, Lock, CreditCard, Calendar } from "lucide-react";
+import { Car, DollarSign, Users, Clock, Camera, Lock, CreditCard, Calendar, FileText } from "lucide-react";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import CameraMonitor from "../../components/dashboard/CameraMonitor";
 import PaymentManager from "../../components/dashboard/PaymentManager";
@@ -9,6 +9,8 @@ import PaymentDebugger from "../../components/debug/PaymentDebugger";
 import BarrieControl from "../../components/dashboard/BarrieControl";
 import CameraManagement from "../../components/dashboard/CameraManagement";
 import SubscriptionStatsPanel from "../../components/dashboard/SubscriptionStatsPanel";
+import ParkingFullNotification from "../../components/dashboard/ParkingFullNotification";
+import ParkingHistoryWithImages from "../../components/dashboard/ParkingHistoryWithImages";
 import { DashboardStats, ParkingRecord, User } from "../../types";
 import { dashboardAPI, parkingAPI } from "../../services/api";
 import wsService from "../../services/websocket";
@@ -25,8 +27,15 @@ const StaffDashboard: React.FC = () => {
   const [activeParkings, setActiveParkings] = useState<ParkingRecord[]>([]);
   const [selectedParking, setSelectedParking] = useState<ParkingRecord | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "cameras" | "barrie" | "payments" | "confirm-payments" | "subscriptions">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "cameras" | "barrie" | "payments" | "confirm-payments" | "subscriptions" | "history">("overview");
   const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
+  
+  // **THÊM STATE CHO PARKING FULL NOTIFICATION**
+  const [showParkingFullNotification, setShowParkingFullNotification] = useState(false);
+  const [parkingFullData, setParkingFullData] = useState<{
+    currentCapacity: number;
+    maxCapacity: number;
+  }>({ currentCapacity: 0, maxCapacity: 4 });
   
   // Camera refs để gọi auto capture
   const camera1Ref = useRef<any>(null);
@@ -137,6 +146,31 @@ const StaffDashboard: React.FC = () => {
     wsService.subscribe("payment_completed", (data: any) => {
       console.log("✅ Payment completed in StaffDashboard:", data);
       setPendingPaymentsCount(prev => Math.max(0, prev - 1));
+    });
+
+    // **LISTEN FOR PARKING FULL NOTIFICATIONS**
+    wsService.subscribe("parking_full", (data: any) => {
+      console.log("🚨 Parking lot full:", data);
+      
+      // Update notification state
+      setParkingFullData({
+        currentCapacity: data.currentCapacity,
+        maxCapacity: data.maxCapacity
+      });
+      setShowParkingFullNotification(true);
+      
+      // Update stats to reflect full capacity
+      setStats(prev => ({
+        ...prev,
+        parkingCapacity: {
+          current: data.currentCapacity,
+          maximum: data.maxCapacity,
+          available: 0,
+          occupancyRate: 100,
+          isFull: true,
+          status: "FULL"
+        }
+      }));
     });
 
     // Listen for auto capture requests from ESP32
@@ -295,6 +329,19 @@ const StaffDashboard: React.FC = () => {
               <div className="flex items-center space-x-2">
                 <Calendar className="h-4 w-4" />
                 <span>Vé tháng</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "history"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <FileText className="h-4 w-4" />
+                <span>Lịch sử</span>
               </div>
             </button>
           </nav>
@@ -524,11 +571,26 @@ const StaffDashboard: React.FC = () => {
               <SubscriptionStatsPanel />
             </div>
           )}
+
+          {/* Parking History Tab */}
+          {activeTab === "history" && (
+            <div className="space-y-6">
+              <ParkingHistoryWithImages />
+            </div>
+          )}
         </div>
       </div>
       
       {/* Auto Payment Popup - Hovers over everything */}
       <PaymentPopup autoShow={true} />
+      
+      {/* **PARKING FULL NOTIFICATION** */}
+      <ParkingFullNotification
+        isVisible={showParkingFullNotification}
+        onClose={() => setShowParkingFullNotification(false)}
+        currentCapacity={parkingFullData.currentCapacity}
+        maxCapacity={parkingFullData.maxCapacity}
+      />
     </div>
   );
 };

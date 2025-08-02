@@ -4,6 +4,7 @@ const Vehicle = require("../models/Vehicle");
 const subscriptionController = require("./subscriptionController");
 const recognizePlate = require("../utils/recognizePlate_fastapi");
 const { calculateFeeWithSubscription } = require("../utils/feeCalculator");
+const { uploadBase64Image } = require("../utils/cloudinaryHelper");
 
 // Hàm tính độ tương đồng giữa 2 chuỗi (Levenshtein distance)
 function calculateSimilarity(str1, str2) {
@@ -146,39 +147,64 @@ exports.checkSubscriptionAndOpenGate = async (req, res) => {
 exports.receiveUID = async (req, res) => {
     try {
         const { uid, cameraIndex } = req.body;
-
-        console.log(`Nhận UID từ ESP32: ${uid}, Camera: ${cameraIndex}`);
-
-        // Kiểm tra cache để tránh spam WebSocket messages
-        const cacheKey = `ws-${uid}-${cameraIndex}`;
-        const now = Date.now();
         
-        if (processingCache.has(cacheKey)) {
-            const cached = processingCache.get(cacheKey);
-            if ((now - cached.timestamp) < 2000) { // 2 giây debounce cho WebSocket
-                console.log(`⏳ WebSocket message gần đây - UID: ${uid}, Camera: ${cameraIndex}`);
-                return res.json({
-                    message: "UID received successfully (cached)",
+        console.log(`🎯 ESP32 RFID received - UID: ${uid}, Camera: ${cameraIndex}`);
+
+        // **KIỂM TRA CAPACITY BÃI ĐỖ XE**
+        const MAX_PARKING_CAPACITY = 4; // Giới hạn 4 vị trí
+        
+        if (cameraIndex === 1) { // Cổng vào
+            const currentActiveParkings = await ParkingRecord.countDocuments({ 
+                status: "active",
+                timeOut: { $exists: false }
+            });
+            
+            console.log(`🅿️ Parking status: ${currentActiveParkings}/${MAX_PARKING_CAPACITY} slots occupied`);
+            
+            if (currentActiveParkings >= MAX_PARKING_CAPACITY) {
+                console.log(`🚨 PARKING FULL! Cannot allow entry. Current: ${currentActiveParkings}/${MAX_PARKING_CAPACITY}`);
+                
+                // Gửi WebSocket notification về bãi đầy
+                const fullMessage = {
+                    type: "parking_full",
+                    message: "Bãi đỗ xe đã đầy!",
+                    currentCapacity: currentActiveParkings,
+                    maxCapacity: MAX_PARKING_CAPACITY,
                     uid: uid,
                     cameraIndex: cameraIndex,
-                    timestamp: new Date(),
+                    timestamp: new Date().toISOString()
+                };
+
+                wsClients.forEach(client => {
+                    if (client.readyState === client.OPEN) {
+                        client.send(JSON.stringify(fullMessage));
+                    }
+                });
+
+                return res.json({
+                    message: `🚨 BÃI ĐỖ XE ĐÃ ĐẦY! (${currentActiveParkings}/${MAX_PARKING_CAPACITY})`,
+                    action: "DENY_ENTRY_FULL_CAPACITY",
+                    uid: uid,
+                    cameraIndex: cameraIndex,
+                    currentCapacity: currentActiveParkings,
+                    maxCapacity: MAX_PARKING_CAPACITY,
+                    timestamp: new Date().toISOString()
                 });
             }
         }
 
-        // Đánh dấu đã gửi WebSocket message
-        processingCache.set(cacheKey, { timestamp: now, processing: false });
+        // Tiếp tục logic bình thường nếu còn chỗ trống
+        // Gọi WebSocket để trigger auto capture
+        const autoCaptureMessage = {
+            type: "auto_capture",
+            uid: uid,
+            cameraIndex: cameraIndex,
+            timestamp: new Date().toISOString()
+        };
 
-        // Gửi signal tới tất cả frontend qua WebSocket
-        wsClients.forEach((ws) => {
-            if (ws.readyState === 1) {
-                ws.send(
-                    JSON.stringify({
-                        type: "auto_capture",
-                        uid,
-                        cameraIndex,
-                    })
-                );
+        wsClients.forEach(client => {
+            if (client.readyState === client.OPEN) {
+                client.send(JSON.stringify(autoCaptureMessage));
             }
         });
 
@@ -186,11 +212,17 @@ exports.receiveUID = async (req, res) => {
             message: "UID received successfully",
             uid: uid,
             cameraIndex: cameraIndex,
-            timestamp: new Date(),
+            action: "AUTO_CAPTURE",
+            timestamp: new Date().toISOString()
         });
-    } catch (err) {
-        console.error("Lỗi khi xử lý UID:", err);
-        res.status(500).json({ error: err.message });
+
+    } catch (error) {
+        console.error("ESP32 UID receive error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            error: error.message
+        });
     }
 };
 
@@ -223,7 +255,25 @@ exports.autoCapture = async (req, res) => {
 
         // Nhận diện biển số từ ảnh
         let licensePlate = "";
+        let uploadedImageData = null;
+        
         if (imageData) {
+            // Upload ảnh lên Cloudinary trước khi nhận diện
+            try {
+                const action = cameraIndex === 1 ? 'in' : 'out';
+                uploadedImageData = await uploadBase64Image(
+                    imageData, 
+                    'unknown', // Sẽ update lại sau khi nhận diện
+                    action, 
+                    cameraIndex
+                );
+                console.log(`📸 Image uploaded to Cloudinary: ${uploadedImageData.url}`);
+            } catch (uploadError) {
+                console.error('Error uploading image:', uploadError);
+                // Tiếp tục xử lý mà không có ảnh
+            }
+            
+            // Nhận diện biển số
             licensePlate = await recognizePlate(imageData);
         }
 
@@ -284,7 +334,7 @@ exports.autoCapture = async (req, res) => {
                 }
             }
 
-            const newRecord = new ParkingRecord({
+            const recordData = {
                 rfid: uid,
                 licensePlate: licensePlate,
                 userId: userId,
@@ -295,7 +345,14 @@ exports.autoCapture = async (req, res) => {
                 subscriptionId: subscriptionId,
                 paymentMethod: paymentType === "subscription" ? "subscription" : undefined,
                 paymentStatus: paymentType === "subscription" ? "paid" : "pending",
-            });
+            };
+
+            // Thêm ảnh vào nếu có
+            if (uploadedImageData) {
+                recordData.entryImage = uploadedImageData;
+            }
+
+            const newRecord = new ParkingRecord(recordData);
 
             await newRecord.save();
 
@@ -398,6 +455,11 @@ exports.autoCapture = async (req, res) => {
                 existingRecord.subscriptionDiscount = feeInfo.subscriptionDiscount || 0;
                 existingRecord.status = "completed";
                 existingRecord.paymentMethod = paymentMethod;
+                
+                // Thêm ảnh ra nếu có
+                if (uploadedImageData) {
+                    existingRecord.exitImage = uploadedImageData;
+                }
                 
                 // Chỉ set paid nếu là subscription, còn lại để pending
                 if (hasSubscription) {

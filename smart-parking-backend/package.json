@@ -7,6 +7,7 @@
         "start": "nodemon app.js",
         "dev": "nodemon app.js",
         "seed": "node scripts/seedData.js",
+        "cleanup:manual": "node -e \"require('./jobs/cleanupJobs').runCleanupManually(3).then(r => console.log('Done:', r)).catch(e => console.error('Error:', e))\"",
         "test": "echo \"Error: no test specified\" && exit 1"
     },
     "keywords": [
@@ -24,13 +25,16 @@
         "axios": "^1.11.0",
         "bcryptjs": "^2.4.3",
         "body-parser": "^2.2.0",
+        "cloudinary": "^2.7.0",
         "cors": "^2.8.5",
+        "dotenv": "^17.2.1",
         "express": "^4.18.2",
         "express-rate-limit": "^7.1.5",
         "helmet": "^7.1.0",
         "jsonwebtoken": "^9.0.2",
         "mongoose": "^8.16.4",
         "morgan": "^1.10.0",
+        "multer": "^2.0.2",
         "node-cron": "^3.0.3",
         "ws": "^8.18.3"
     },

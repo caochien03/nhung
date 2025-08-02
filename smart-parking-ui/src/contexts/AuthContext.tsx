@@ -36,6 +36,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const token = localStorage.getItem("token");
       if (token) {
+        console.log("Checking auth with existing token...");
         const response = await authAPI.getCurrentUser();
         if (response.success && response.data) {
           // Ensure user object has both _id and id for compatibility
@@ -43,14 +44,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (user._id && !user.id) {
             user.id = user._id;
           }
+          console.log("Auth check successful, user:", user.username);
           setUser(user);
         } else {
+          console.log("Auth check failed, removing token");
           localStorage.removeItem("token");
+          setUser(null);
         }
+      } else {
+        console.log("No token found");
+        setUser(null);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Auth check failed:", error);
-      localStorage.removeItem("token");
+      // Only remove token if it's actually invalid, not on network errors
+      if (error.response && error.response.status === 401) {
+        console.log("Token invalid, removing");
+        localStorage.removeItem("token");
+        setUser(null);
+      } else {
+        console.log("Network error during auth check, keeping token");
+        // Keep existing user state if it's just a network error
+      }
     } finally {
       setLoading(false);
     }

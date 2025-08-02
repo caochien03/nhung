@@ -10,6 +10,23 @@ const ParkingRecordSchema = new mongoose.Schema({
     trim: true,
     uppercase: true,
   },
+  // Hình ảnh xe vào
+  entryImage: {
+    url: String,
+    publicId: String,
+    format: String,
+    width: Number,
+    height: Number
+  },
+  // Hình ảnh xe ra  
+  exitImage: {
+    url: String,
+    publicId: String,
+    format: String,
+    width: Number,
+    height: Number
+  },
+  // Deprecated - giữ để tương thích
   imageUrl: {
     type: String,
   },

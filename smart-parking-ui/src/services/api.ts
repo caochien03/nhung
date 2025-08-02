@@ -15,7 +15,7 @@ const API_BASE_URL = "http://localhost:8080/api";
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 15000, // Tăng timeout lên 15 giây
 });
 
 // Request interceptor
@@ -38,36 +38,24 @@ api.interceptors.response.use(
   },
   (error) => {
     console.error("API Error:", error.response?.data || error.message);
+    
+    // Only logout on 401 Unauthorized, not on network errors
     if (error.response?.status === 401) {
+      console.log("Unauthorized access, logging out...");
       localStorage.removeItem("token");
-      window.location.href = "/login";
+      
+      // Only redirect if not already on login page
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+    } else if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK') {
+      console.log("Network error, keeping user logged in...");
+      // Don't logout on network errors
     }
+    
     return Promise.reject(error);
   }
 );
-
-// Parking Records API
-export const parkingAPI = {
-  // Get all parking records
-  getRecords: (): Promise<ApiResponse<ParkingRecord[]>> =>
-    api.get("/parking"),
-
-  // Create new parking record
-  createRecord: (data: Partial<ParkingRecord>): Promise<ApiResponse<ParkingRecord>> =>
-    api.post("/parking", data),
-
-  // Get active parking records
-  getActiveRecords: (): Promise<ApiResponse<ParkingRecord[]>> =>
-    api.get("/parking/active"),
-
-  // Complete parking record (vehicle exit)
-  completeRecord: (id: string, data: { timeOut: Date; fee: number }): Promise<ApiResponse<ParkingRecord>> =>
-    api.put(`/parking/${id}/complete`, data),
-
-  // Get pending payments (for staff confirmation)
-  getPendingPayments: (): Promise<ApiResponse<ParkingRecord[]>> =>
-    api.get("/parking/pending-payments"),
-};
 
 // ESP32 API
 export const esp32API = {
@@ -182,6 +170,88 @@ export const usersAPI = {
   // Get user dashboard stats
   getUserDashboardStats: (): Promise<ApiResponse<any>> =>
     api.get("/users/dashboard/stats"),
+};
+
+// Parking API
+export const parkingAPI = {
+  // Get parking history with images (staff only)
+  getParkingHistoryWithImages: (params?: {
+    days?: number;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<ApiResponse<{
+    records: ParkingRecord[];
+    pagination: {
+      page: number;
+      pages: number;
+      total: number;
+      limit: number;
+    };
+  }>> =>
+    api.get("/parking/history-with-images", { params }),
+
+  // Get parking history range
+  getParkingHistoryRange: (params?: {
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<ApiResponse<{
+    records: ParkingRecord[];
+    pagination: {
+      page: number;
+      pages: number;
+      total: number;
+      limit: number;
+    };
+  }>> =>
+    api.get("/parking/history-range", { params }),
+
+  // Get parking record with images by ID
+  getParkingRecordWithImages: (id: string): Promise<ApiResponse<ParkingRecord>> =>
+    api.get(`/parking/${id}/with-images`),
+
+  // Get all parking records (admin/staff)
+  getParkingRecords: (params?: any): Promise<ApiResponse<ParkingRecord[]>> =>
+    api.get("/parking", { params }),
+
+  // Get active parking records
+  getActiveParkingRecords: (): Promise<ApiResponse<ParkingRecord[]>> =>
+    api.get("/parking/active"),
+
+  // Get active parking records (compatibility)
+  getActiveRecords: (): Promise<ApiResponse<ParkingRecord[]>> =>
+    api.get("/parking/active"),
+
+  // Get pending payments (for staff confirmation)
+  getPendingPayments: (): Promise<ApiResponse<ParkingRecord[]>> =>
+    api.get("/parking/pending-payments"),
+
+  // Create new parking record
+  createRecord: (data: Partial<ParkingRecord>): Promise<ApiResponse<ParkingRecord>> =>
+    api.post("/parking", data),
+
+  // Complete parking record (vehicle exit)
+  completeRecord: (id: string, data: { timeOut: Date; fee: number }): Promise<ApiResponse<ParkingRecord>> =>
+    api.put(`/parking/${id}/complete`, data),
+
+  // Record entry
+  recordEntry: (data: {
+    licensePlate: string;
+    userId?: string;
+    location: string;
+    imageData?: string;
+  }): Promise<ApiResponse<ParkingRecord>> =>
+    api.post("/parking/entry", data),
+
+  // Record exit
+  recordExit: (data: {
+    recordId: string;
+    imageData?: string;
+  }): Promise<ApiResponse<ParkingRecord>> =>
+    api.post("/parking/exit", data),
 };
 
 // Payments API

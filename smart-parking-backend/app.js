@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -14,6 +15,7 @@ const dashboardRoutes = require("./routes/dashboard");
 const barrieRoutes = require("./routes/barrie");
 const cameraRoutes = require("./routes/camera");
 const subscriptionRoutes = require("./routes/subscriptions");
+const cleanupRoutes = require("./routes/cleanup");
 const testRoutes = require("./routes/test");
 
 // Import database and websocket
@@ -72,7 +74,8 @@ app.use("/api/esp32", esp32Routes);
 app.use("/api/barrie", barrieRoutes);
 app.use("/api/camera", cameraRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
-app.use("/api", testRoutes); // Test routes không cần auth
+app.use("/api/cleanup", cleanupRoutes);
+app.use("/api/test", testRoutes);
 
 // Root route
 app.get("/", (req, res) => {
@@ -87,6 +90,8 @@ app.get("/", (req, res) => {
       payments: "/api/payments",
       dashboard: "/api/dashboard",
       esp32: "/api/esp32",
+      subscriptions: "/api/subscriptions",
+      cleanup: "/api/cleanup"
     },
   });
 });
@@ -116,6 +121,11 @@ connectDB();
 const { startSubscriptionJobs } = require("./jobs/subscriptionJobs");
 startSubscriptionJobs();
 
+// Start cleanup background jobs
+const { cleanupOldData, weeklyStorageReport } = require("./jobs/cleanupJobs");
+cleanupOldData();
+weeklyStorageReport();
+
 // Create HTTP server and setup WebSocket
 const server = http.createServer(app);
 setupWebSocket(server);
@@ -125,4 +135,6 @@ server.listen(PORT, () => {
   console.log(`🚀 Smart Parking System API running on port ${PORT}`);
   console.log(`📊 WebSocket server ready for real-time communication`);
   console.log(`🎫 Subscription management system active`);
+  console.log(`🧹 Cleanup jobs scheduled (daily at 2:00 AM & weekly storage reports)`);
+  console.log(`☁️  Cloudinary integration ready for image storage`);
 });
