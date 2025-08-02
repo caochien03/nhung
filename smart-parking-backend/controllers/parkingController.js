@@ -496,16 +496,18 @@ exports.getParkingHistoryWithImages = async (req, res) => {
 
     res.json({
       success: true,
-      data: processedRecords,
-      pagination: {
-        current: parseInt(page),
-        total: Math.ceil(total / limit),
-        totalRecords: total,
-      },
-      summary: {
-        date: targetDate.toISOString().split('T')[0],
-        totalEntries: processedRecords.filter(r => r.action === 'in').length,
-        totalExits: processedRecords.filter(r => r.action === 'out').length,
+      data: {
+        records: processedRecords,
+        pagination: {
+          current: parseInt(page),
+          total: Math.ceil(total / limit),
+          totalRecords: total,
+        },
+        summary: {
+          date: targetDate.toISOString().split('T')[0],
+          totalEntries: processedRecords.filter(r => r.action === 'in').length,
+          totalExits: processedRecords.filter(r => r.action === 'out').length,
+        }
       }
     });
 

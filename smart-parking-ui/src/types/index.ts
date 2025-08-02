@@ -35,6 +35,14 @@ export interface ParkingRecord {
   paymentStatus: "pending" | "paid" | "failed";
   paymentMethod?: "qr" | "cash" | "balance" | "subscription";
   imageUrl?: string;
+  action?: "in" | "out"; // For API response formatting
+  image?: {
+    url: string;
+    publicId: string;
+    format: string;
+    width: number;
+    height: number;
+  };
   entryImage?: {
     url: string;
     publicId: string;

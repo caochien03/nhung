@@ -339,24 +339,14 @@ const ParkingHistoryWithImages: React.FC = () => {
                       {record.licensePlate || 'Không xác định'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {record.entryImage?.url ? (
+                      {(record as any).image?.url ? (
                         <img
-                          src={record.entryImage.url}
-                          alt="Entry"
+                          src={(record as any).image.url}
+                          alt={(record as any).action === 'in' ? 'Entry' : 'Exit'}
                           className="h-12 w-20 object-cover rounded cursor-pointer border"
                           onClick={() => setSelectedImage({ 
-                            url: record.entryImage!.url, 
-                            title: `Xe vào - ${record.licensePlate || 'Không xác định'}` 
-                          })}
-                        />
-                      ) : record.exitImage?.url ? (
-                        <img
-                          src={record.exitImage.url}
-                          alt="Exit"
-                          className="h-12 w-20 object-cover rounded cursor-pointer border"
-                          onClick={() => setSelectedImage({ 
-                            url: record.exitImage!.url, 
-                            title: `Xe ra - ${record.licensePlate || 'Không xác định'}` 
+                            url: (record as any).image!.url, 
+                            title: `${(record as any).action === 'in' ? 'Xe vào' : 'Xe ra'} - ${record.licensePlate || 'Không xác định'}` 
                           })}
                         />
                       ) : (
