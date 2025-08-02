@@ -1,4 +1,7 @@
 const ParkingRecord = require("../models/ParkingRecord");
+const User = require("../models/User");
+const Vehicle = require("../models/Vehicle");
+const subscriptionController = require("./subscriptionController");
 const recognizePlate = require("../utils/recognizePlate_fastapi");
 
 // Hàm tính độ tương đồng giữa 2 chuỗi (Levenshtein distance)
@@ -39,6 +42,90 @@ function calculateSimilarity(str1, str2) {
 let wsClients = [];
 exports.setWsClients = (clients) => {
     wsClients = clients;
+};
+
+// Kiểm tra vé tháng và mở cổng
+exports.checkSubscriptionAndOpenGate = async (req, res) => {
+    try {
+        const { licensePlate, cameraIndex } = req.body;
+
+        console.log(`Kiểm tra vé tháng - Biển số: ${licensePlate}, Camera: ${cameraIndex}`);
+
+        if (!licensePlate) {
+            return res.status(400).json({
+                success: false,
+                message: "License plate is required",
+                canOpen: false,
+            });
+        }
+
+        // Tìm xe đã đăng ký
+        const vehicle = await Vehicle.findOne({
+            licensePlate: licensePlate.toUpperCase(),
+            isActive: true
+        }).populate("userId");
+
+        if (!vehicle || !vehicle.userId) {
+            return res.json({
+                success: false,
+                message: "Vehicle not registered",
+                canOpen: false,
+                reason: "Xe chưa được đăng ký trong hệ thống",
+            });
+        }
+
+        // Kiểm tra vé tháng
+        const subscriptionCheck = await subscriptionController.checkSubscriptionForParking(
+            vehicle.userId._id, 
+            licensePlate
+        );
+
+        if (!subscriptionCheck.hasSubscription || !subscriptionCheck.canUse) {
+            return res.json({
+                success: false,
+                message: "No valid subscription",
+                canOpen: false,
+                reason: subscriptionCheck.reason || "Không có vé tháng hợp lệ",
+            });
+        }
+
+        // Gửi lệnh mở cổng qua WebSocket tới ESP32
+        const gateCommand = {
+            type: "open_gate",
+            cameraIndex: cameraIndex,
+            licensePlate: licensePlate,
+            reason: "subscription",
+            timestamp: new Date(),
+        };
+
+        wsClients.forEach((ws) => {
+            if (ws.readyState === 1) {
+                ws.send(JSON.stringify(gateCommand));
+            }
+        });
+
+        res.json({
+            success: true,
+            message: "Gate opened for subscription user",
+            canOpen: true,
+            subscription: {
+                type: subscriptionCheck.subscription.type,
+                remainingDays: subscriptionCheck.remainingDays,
+            },
+            licensePlate: licensePlate,
+            cameraIndex: cameraIndex,
+            timestamp: new Date(),
+        });
+
+    } catch (err) {
+        console.error("Lỗi khi kiểm tra vé tháng:", err);
+        res.status(500).json({ 
+            success: false,
+            message: "Internal server error",
+            canOpen: false,
+            error: err.message 
+        });
+    }
 };
 
 exports.receiveUID = async (req, res) => {
@@ -86,11 +173,44 @@ exports.autoCapture = async (req, res) => {
 
         if (cameraIndex === 1) {
             // CAMERA VÀO - Tạo record mới
+            
+            // Tìm user dựa trên biển số
+            let userId = null;
+            let paymentType = "hourly";
+            let subscriptionId = null;
+            
+            if (licensePlate) {
+                const vehicle = await Vehicle.findOne({
+                    licensePlate: licensePlate.toUpperCase(),
+                    isActive: true
+                }).populate("userId");
+
+                if (vehicle && vehicle.userId) {
+                    userId = vehicle.userId._id;
+                    
+                    // Kiểm tra vé tháng
+                    const subscriptionCheck = await subscriptionController.checkSubscriptionForParking(
+                        userId, 
+                        licensePlate
+                    );
+                    
+                    if (subscriptionCheck.hasSubscription && subscriptionCheck.canUse) {
+                        paymentType = "subscription";
+                        subscriptionId = subscriptionCheck.subscription._id;
+                    }
+                }
+            }
+
             const newRecord = new ParkingRecord({
                 rfid: uid,
                 licensePlate: licensePlate,
+                userId: userId,
                 timeIn: new Date(),
                 cameraIndex: cameraIndex,
+                paymentType: paymentType,
+                subscriptionId: subscriptionId,
+                paymentMethod: paymentType === "subscription" ? "subscription" : undefined,
+                paymentStatus: paymentType === "subscription" ? "paid" : "pending",
             });
 
             await newRecord.save();
@@ -101,6 +221,10 @@ exports.autoCapture = async (req, res) => {
                 uid: uid,
                 licensePlate: licensePlate,
                 cameraIndex: cameraIndex,
+                paymentType: paymentType,
+                subscriptionUsed: paymentType === "subscription",
+                shouldOpenGate: paymentType === "subscription", // Tự động mở cổng cho vé tháng
+                userId: userId,
                 timestamp: new Date(),
             });
         } else if (cameraIndex === 2) {
@@ -165,15 +289,35 @@ exports.autoCapture = async (req, res) => {
                 }
                 durationDisplay += `${seconds}s`;
 
-                // Tính tiền (vẫn làm tròn lên giờ cho việc tính phí)
-                const parkingHours = Math.ceil(
-                    parkingDurationMs / (1000 * 60 * 60)
-                );
+                // Tính tiền dựa trên loại thanh toán
+                const parkingHours = Math.ceil(parkingDurationMs / (1000 * 60 * 60));
                 const hourlyRate = 10000; // 10,000 VND/giờ
-                const fee = parkingHours * hourlyRate;
+                const originalFee = parkingHours * hourlyRate;
+                
+                let finalFee = 0;
+                let subscriptionDiscount = 0;
+                let paymentMethod = existingRecord.paymentMethod;
+                let paymentStatus = existingRecord.paymentStatus;
+
+                if (existingRecord.paymentType === "subscription") {
+                    // Sử dụng vé tháng - miễn phí
+                    finalFee = 0;
+                    subscriptionDiscount = originalFee;
+                    paymentMethod = "subscription";
+                    paymentStatus = "paid";
+                } else {
+                    // Thanh toán theo giờ
+                    finalFee = originalFee;
+                    paymentStatus = "pending";
+                }
 
                 existingRecord.timeOut = timeOut;
-                existingRecord.fee = fee;
+                existingRecord.fee = finalFee;
+                existingRecord.originalFee = originalFee;
+                existingRecord.subscriptionDiscount = subscriptionDiscount;
+                existingRecord.status = "completed";
+                existingRecord.paymentMethod = paymentMethod;
+                existingRecord.paymentStatus = paymentStatus;
                 await existingRecord.save();
 
                 res.json({
@@ -195,9 +339,14 @@ exports.autoCapture = async (req, res) => {
                     }),
                     parkingDuration: durationDisplay,
                     parkingDurationMs: parkingDurationMs,
+                    parkingHours: `${parkingHours} giờ`,
                     billingHours: `${parkingHours} giờ`,
-                    fee: `${fee.toLocaleString()} VND`,
-                    feeNumber: fee,
+                    originalFee: `${originalFee.toLocaleString()} VND`,
+                    fee: finalFee > 0 ? `${finalFee.toLocaleString()} VND` : "MIỄN PHÍ (Vé tháng)",
+                    feeNumber: finalFee,
+                    paymentType: existingRecord.paymentType,
+                    subscriptionUsed: existingRecord.paymentType === "subscription",
+                    subscriptionDiscount: subscriptionDiscount > 0 ? `${subscriptionDiscount.toLocaleString()} VND` : null,
                     entryInfo: `${entryPlate} - ${timeIn.toLocaleTimeString(
                         "vi-VN",
                         { hour12: false }

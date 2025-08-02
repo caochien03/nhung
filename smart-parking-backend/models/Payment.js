@@ -4,7 +4,7 @@ const PaymentSchema = new mongoose.Schema({
   parkingRecordId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "ParkingRecord",
-    required: true,
+    required: false, // Allow null for subscription payments
   },
   amount: {
     type: Number,
@@ -12,7 +12,7 @@ const PaymentSchema = new mongoose.Schema({
   },
   method: {
     type: String,
-    enum: ["qr", "cash", "balance"],
+    enum: ["qr", "cash", "balance", "subscription"],
     required: true,
   },
   status: {

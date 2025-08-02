@@ -24,6 +24,22 @@ const ParkingRecordSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  originalFee: {
+    type: Number, // Phí gốc trước khi áp dụng vé tháng
+  },
+  subscriptionDiscount: {
+    type: Number,
+    default: 0,
+  },
+  subscriptionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Subscription",
+  },
+  paymentType: {
+    type: String,
+    enum: ["hourly", "subscription", "mixed"],
+    default: "hourly",
+  },
   cameraIndex: {
     type: Number,
     required: true,
@@ -41,7 +57,7 @@ const ParkingRecordSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ["qr", "cash", "balance"],
+    enum: ["qr", "cash", "balance", "subscription"],
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,

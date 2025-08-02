@@ -1,14 +1,20 @@
 import React, { useState, useEffect } from "react";
-import { Car, Clock, CreditCard, FileText, User } from "lucide-react";
-import { User as UserType, ParkingRecord, Vehicle } from "../../types";
+import { Car, Clock, CreditCard, FileText, User, Plus, Calendar } from "lucide-react";
+import { User as UserType, ParkingRecord, Vehicle, Subscription } from "../../types";
 import { useAuth } from "../../contexts/AuthContext";
+import { usersAPI, subscriptionsAPI } from "../../services/api";
+import VehicleRegistration from "../../components/user/VehicleRegistration";
+import SubscriptionManager from "../../components/user/SubscriptionManager";
 
 const UserDashboard: React.FC = () => {
   const { user } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [parkingHistory, setParkingHistory] = useState<ParkingRecord[]>([]);
   const [activeParking, setActiveParking] = useState<ParkingRecord | null>(null);
+  const [activeSubscription, setActiveSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showVehicleRegistration, setShowVehicleRegistration] = useState(false);
+  const [showSubscriptionManager, setShowSubscriptionManager] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -17,66 +23,35 @@ const UserDashboard: React.FC = () => {
   }, [user]);
 
   const loadUserData = async () => {
-    // Simulate loading user data
-    setTimeout(() => {
-      setVehicles([
-        {
-          id: "1",
-          licensePlate: "30A-12345",
-          userId: user?.id || "",
-          vehicleType: "car",
-          isRegistered: true,
-          registrationDate: new Date("2024-01-15"),
-        },
-        {
-          id: "2",
-          licensePlate: "30B-67890",
-          userId: user?.id || "",
-          vehicleType: "car",
-          isRegistered: true,
-          registrationDate: new Date("2024-02-20"),
-        },
-      ]);
+    try {
+      // Load user's vehicles
+      const vehiclesResponse = await usersAPI.getUserVehicles();
+      if (vehiclesResponse.success && vehiclesResponse.data) {
+        setVehicles(vehiclesResponse.data);
+      }
 
-      setParkingHistory([
-        {
-          id: "1",
-          rfid: "RFID001",
-          licensePlate: "30A-12345",
-          timeIn: new Date("2024-03-15T08:30:00"),
-          timeOut: new Date("2024-03-15T17:45:00"),
-          fee: 95000,
-          cameraIndex: 1,
-          status: "completed",
-          paymentStatus: "paid",
-          paymentMethod: "balance",
-        },
-        {
-          id: "2",
-          rfid: "RFID002",
-          licensePlate: "30B-67890",
-          timeIn: new Date("2024-03-14T09:15:00"),
-          timeOut: new Date("2024-03-14T18:30:00"),
-          fee: 105000,
-          cameraIndex: 1,
-          status: "completed",
-          paymentStatus: "paid",
-          paymentMethod: "qr",
-        },
-      ]);
+      // Load user's parking history
+      const historyResponse = await usersAPI.getUserParkingHistory();
+      if (historyResponse.success && historyResponse.data) {
+        setParkingHistory(historyResponse.data);
+      }
 
-      setActiveParking({
-        id: "3",
-        rfid: "RFID003",
-        licensePlate: "30A-12345",
-        timeIn: new Date("2024-03-16T10:00:00"),
-        cameraIndex: 1,
-        status: "active",
-        paymentStatus: "pending",
-      });
+      // Load user's active parking
+      const activeResponse = await usersAPI.getUserActiveParking();
+      if (activeResponse.success && activeResponse.data) {
+        setActiveParking(activeResponse.data);
+      }
 
+      // Load user's active subscription
+      const subscriptionResponse = await subscriptionsAPI.getActiveSubscription();
+      if (subscriptionResponse.success && subscriptionResponse.data) {
+        setActiveSubscription(subscriptionResponse.data);
+      }
+    } catch (error) {
+      console.error("Error loading user data:", error);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   const formatDuration = (timeIn: Date | string, timeOut: Date | string) => {
@@ -86,6 +61,21 @@ const UserDashboard: React.FC = () => {
     const hours = Math.floor(duration / (1000 * 60 * 60));
     const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
     return `${hours}h ${minutes}m`;
+  };
+
+  const handleVehicleAdded = () => {
+    loadUserData();
+  };
+
+  const handleSubscriptionUpdated = () => {
+    loadUserData();
+  };
+
+  const getRemainingDays = (endDate: Date | string) => {
+    const end = new Date(endDate);
+    const now = new Date();
+    const diffTime = end.getTime() - now.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
   if (loading) {
@@ -122,7 +112,8 @@ const UserDashboard: React.FC = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="flex items-center">
             <div className="p-3 rounded-full bg-blue-100">
@@ -164,12 +155,12 @@ const UserDashboard: React.FC = () => {
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="flex items-center">
             <div className="p-3 rounded-full bg-orange-100">
-              <FileText className="h-6 w-6 text-orange-600" />
+              <Calendar className="h-6 w-6 text-orange-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Đang gửi xe</p>
+              <p className="text-sm font-medium text-gray-600">Vé tháng</p>
               <p className="text-2xl font-bold text-gray-900">
-                {activeParking ? "1" : "0"}
+                {activeSubscription ? `${getRemainingDays(activeSubscription.endDate)} ngày` : "Chưa có"}
               </p>
             </div>
           </div>
@@ -180,10 +171,19 @@ const UserDashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* My Vehicles */}
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Xe của tôi</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Xe của tôi</h3>
+            <button
+              onClick={() => setShowVehicleRegistration(true)}
+              className="flex items-center px-3 py-1 text-sm font-medium text-blue-600 hover:text-blue-700"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Thêm xe
+            </button>
+          </div>
           <div className="space-y-4">
             {vehicles.map((vehicle) => (
-                              <div key={vehicle.id || vehicle._id} className="border border-gray-200 rounded-lg p-4">
+              <div key={vehicle.id || vehicle._id} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-gray-900">{vehicle.licensePlate}</p>
@@ -203,50 +203,69 @@ const UserDashboard: React.FC = () => {
                 </div>
               </div>
             ))}
-            <button className="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors">
+            <button 
+              onClick={() => setShowVehicleRegistration(true)}
+              className="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors"
+            >
               + Thêm xe mới
             </button>
           </div>
         </div>
 
-        {/* Active Parking */}
+        {/* Subscription Status */}
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Đang gửi xe</h3>
-          {activeParking ? (
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Vé tháng</h3>
+            <button
+              onClick={() => setShowSubscriptionManager(true)}
+              className="text-sm font-medium text-blue-600 hover:text-blue-700"
+            >
+              Quản lý
+            </button>
+          </div>
+          
+          {activeSubscription ? (
             <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
               <div className="flex items-center justify-between mb-3">
-                <h4 className="font-medium text-blue-900">{activeParking.licensePlate}</h4>
-                <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                  Đang gửi
+                <h4 className="font-medium text-blue-900">
+                  Gói {activeSubscription.type === "monthly" ? "1 tháng" : 
+                       activeSubscription.type === "quarterly" ? "3 tháng" : "12 tháng"}
+                </h4>
+                <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                  Đang hoạt động
                 </span>
               </div>
               <div className="space-y-2 text-sm">
                 <p className="text-blue-700">
-                  <span className="font-medium">Giờ vào:</span> {new Date(activeParking.timeIn).toLocaleTimeString("vi-VN", { hour12: false })}
+                  <span className="font-medium">Còn lại:</span> {getRemainingDays(activeSubscription.endDate)} ngày
                 </p>
                 <p className="text-blue-700">
-                  <span className="font-medium">Ngày:</span> {new Date(activeParking.timeIn).toLocaleDateString("vi-VN")}
-                </p>
-                <p className="text-blue-700">
-                  <span className="font-medium">ID:</span> {activeParking.id ? activeParking.id.slice(-6) : activeParking._id ? activeParking._id.slice(-6) : 'N/A'}
+                  <span className="font-medium">Hết hạn:</span> {new Date(activeSubscription.endDate).toLocaleDateString("vi-VN")}
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-blue-200">
-                <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                <button 
+                  onClick={() => setShowSubscriptionManager(true)}
+                  className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                >
                   Xem chi tiết
                 </button>
               </div>
             </div>
           ) : (
             <div className="text-center py-8">
-              <Car className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-500">Không có xe nào đang gửi</p>
+              <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+              <p className="text-gray-500 mb-4">Bạn chưa có vé tháng</p>
+              <button
+                onClick={() => setShowSubscriptionManager(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Đăng ký vé tháng
+              </button>
             </div>
           )}
         </div>
-      </div>
-
-      {/* Parking History */}
+      </div>      {/* Parking History */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Lịch sử gửi xe</h3>
         <div className="overflow-x-auto">
@@ -296,6 +315,11 @@ const UserDashboard: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {record.fee ? `${record.fee.toLocaleString()} VND` : "-"}
+                    {record.paymentType === "subscription" && (
+                      <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                        Vé tháng
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -312,6 +336,36 @@ const UserDashboard: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Vehicle Registration Modal */}
+      {showVehicleRegistration && (
+        <VehicleRegistration
+          onVehicleAdded={handleVehicleAdded}
+          onClose={() => setShowVehicleRegistration(false)}
+        />
+      )}
+
+      {/* Subscription Manager Modal */}
+      {showSubscriptionManager && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-gray-900">Quản lý vé tháng</h2>
+                <button
+                  onClick={() => setShowSubscriptionManager(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <SubscriptionManager onSubscriptionUpdated={handleSubscriptionUpdated} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

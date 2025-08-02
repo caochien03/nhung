@@ -188,8 +188,8 @@ const StaffDashboard: React.FC = () => {
               {/* Camera Monitoring */}
               <div className="lg:col-span-2 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <CameraMonitor cameraIndex={1} title="Camera vào" />
-                  <CameraMonitor cameraIndex={2} title="Camera ra" />
+                  <CameraMonitor cameraIndex={0} title="XWF-1080P (Camera thứ 1) - Webcam USB 1080P" autoStart={true} />
+                  <CameraMonitor cameraIndex={1} title="XWF-1080P (Camera thứ 2) - Webcam USB 1080P khác" autoStart={true} />
                 </div>
               </div>
 

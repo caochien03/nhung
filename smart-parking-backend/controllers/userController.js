@@ -1,8 +1,10 @@
 const User = require("../models/User");
 const Vehicle = require("../models/Vehicle");
+const ParkingRecord = require("../models/ParkingRecord");
+const Payment = require("../models/Payment");
 
 // Get all users (admin only)
-exports.getUsers = async (req, res) => {
+exports.getAllUsers = async (req, res) => {
   try {
     const { page = 1, limit = 10, role, search } = req.query;
     
@@ -184,11 +186,11 @@ exports.deleteUser = async (req, res) => {
   }
 };
 
-// Get user vehicles
+// Get user's vehicles
 exports.getUserVehicles = async (req, res) => {
   try {
     const vehicles = await Vehicle.find({ 
-      userId: req.params.userId,
+      userId: req.user._id,
       isActive: true 
     }).sort({ createdAt: -1 });
 
@@ -205,21 +207,24 @@ exports.getUserVehicles = async (req, res) => {
   }
 };
 
-// Register vehicle for user
+// Register new vehicle
 exports.registerVehicle = async (req, res) => {
   try {
-    const { licensePlate, vehicleType = "car" } = req.body;
-    const userId = req.params.userId;
+    const { licensePlate, vehicleType } = req.body;
 
-    if (!licensePlate) {
+    if (!licensePlate || !vehicleType) {
       return res.status(400).json({
         success: false,
-        message: "License plate is required",
+        message: "License plate and vehicle type are required",
       });
     }
 
     // Check if vehicle already exists
-    const existingVehicle = await Vehicle.findOne({ licensePlate });
+    const existingVehicle = await Vehicle.findOne({ 
+      licensePlate: licensePlate.toUpperCase(),
+      isActive: true 
+    });
+
     if (existingVehicle) {
       return res.status(400).json({
         success: false,
@@ -227,13 +232,21 @@ exports.registerVehicle = async (req, res) => {
       });
     }
 
+    // Create new vehicle
     const vehicle = new Vehicle({
       licensePlate: licensePlate.toUpperCase(),
-      userId,
+      userId: req.user._id,
       vehicleType,
+      isRegistered: true,
+      registrationDate: new Date(),
     });
 
     await vehicle.save();
+
+    // Update user's license plates array
+    await User.findByIdAndUpdate(req.user._id, {
+      $addToSet: { licensePlates: licensePlate.toUpperCase() }
+    });
 
     res.status(201).json({
       success: true,
@@ -248,8 +261,240 @@ exports.registerVehicle = async (req, res) => {
   }
 };
 
+// Remove vehicle
+exports.removeVehicle = async (req, res) => {
+  try {
+    const { vehicleId } = req.params;
+
+    const vehicle = await Vehicle.findOne({
+      _id: vehicleId,
+      userId: req.user._id,
+    });
+
+    if (!vehicle) {
+      return res.status(404).json({
+        success: false,
+        message: "Vehicle not found",
+      });
+    }
+
+    // Check if vehicle has active parking
+    const activeParking = await ParkingRecord.findOne({
+      licensePlate: vehicle.licensePlate,
+      status: "active",
+    });
+
+    if (activeParking) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot remove vehicle with active parking",
+      });
+    }
+
+    // Soft delete vehicle
+    vehicle.isActive = false;
+    await vehicle.save();
+
+    // Remove from user's license plates array
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { licensePlates: vehicle.licensePlate }
+    });
+
+    res.json({
+      success: true,
+      message: "Vehicle removed successfully",
+    });
+  } catch (error) {
+    console.error("Remove vehicle error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// Get user's parking history
+exports.getUserParkingHistory = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+
+    const query = { userId: req.user._id };
+    if (status) query.status = status;
+
+    const records = await ParkingRecord.find(query)
+      .sort({ timeIn: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await ParkingRecord.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: records,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / limit),
+        totalRecords: total,
+      },
+    });
+  } catch (error) {
+    console.error("Get user parking history error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// Get user's active parking
+exports.getUserActiveParking = async (req, res) => {
+  try {
+    const activeParking = await ParkingRecord.findOne({
+      userId: req.user._id,
+      status: "active",
+    });
+
+    res.json({
+      success: true,
+      data: activeParking,
+    });
+  } catch (error) {
+    console.error("Get user active parking error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// Get user's payment history
+exports.getUserPaymentHistory = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+
+    // Get user's parking records
+    const userParkingRecords = await ParkingRecord.find({ 
+      userId: req.user._id 
+    }).select('_id');
+
+    const parkingRecordIds = userParkingRecords.map(record => record._id);
+
+    const payments = await Payment.find({
+      parkingRecordId: { $in: parkingRecordIds }
+    })
+    .populate('parkingRecordId', 'licensePlate timeIn timeOut fee')
+    .sort({ createdAt: -1 })
+    .limit(limit * 1)
+    .skip((page - 1) * limit);
+
+    const total = await Payment.countDocuments({
+      parkingRecordId: { $in: parkingRecordIds }
+    });
+
+    res.json({
+      success: true,
+      data: payments,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / limit),
+        totalPayments: total,
+      },
+    });
+  } catch (error) {
+    console.error("Get user payment history error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// Get user dashboard stats
+exports.getUserDashboardStats = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const [
+      totalVehicles,
+      activeParking,
+      totalParkingRecords,
+      totalSpent,
+      thisMonthSpent,
+    ] = await Promise.all([
+      Vehicle.countDocuments({ userId, isActive: true }),
+      ParkingRecord.findOne({ userId, status: "active" }),
+      ParkingRecord.countDocuments({ userId }),
+      Payment.aggregate([
+        {
+          $lookup: {
+            from: "parkingrecords",
+            localField: "parkingRecordId",
+            foreignField: "_id",
+            as: "parkingRecord"
+          }
+        },
+        {
+          $match: {
+            "parkingRecord.userId": userId,
+            status: "completed"
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" }
+          }
+        }
+      ]),
+      Payment.aggregate([
+        {
+          $lookup: {
+            from: "parkingrecords",
+            localField: "parkingRecordId",
+            foreignField: "_id",
+            as: "parkingRecord"
+          }
+        },
+        {
+          $match: {
+            "parkingRecord.userId": userId,
+            status: "completed",
+            createdAt: {
+              $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+            }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" }
+          }
+        }
+      ]),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        totalVehicles,
+        hasActiveParking: !!activeParking,
+        activeParking,
+        totalParkingRecords,
+        totalSpent: totalSpent[0]?.total || 0,
+        thisMonthSpent: thisMonthSpent[0]?.total || 0,
+      },
+    });
+  } catch (error) {
+    console.error("Get user dashboard stats error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 // Update user balance
-exports.updateBalance = async (req, res) => {
+exports.updateUserBalance = async (req, res) => {
   try {
     const { amount, operation = "add" } = req.body; // operation: "add" or "subtract"
     

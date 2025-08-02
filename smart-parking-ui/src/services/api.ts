@@ -4,6 +4,7 @@ import {
   ParkingRecord, 
   Vehicle, 
   Payment, 
+  Subscription,
   Revenue, 
   DashboardStats,
   ApiResponse 
@@ -103,6 +104,7 @@ export const cameraAPI = {
   // Get all cameras
   getCameras: (): Promise<ApiResponse<any[]>> =>
     api.get("/camera"),
+
   // Get camera by ID
   getCameraById: (id: string): Promise<ApiResponse<any>> =>
     api.get(`/camera/${id}`),
@@ -122,25 +124,54 @@ export const cameraAPI = {
 
 // Users API
 export const usersAPI = {
-  // Get all users
-  getUsers: (): Promise<ApiResponse<User[]>> =>
-    api.get("/users"),
+  // Get all users (admin only)
+  getUsers: (params?: any): Promise<ApiResponse<User[]>> =>
+    api.get("/users", { params }),
 
-  // Create user
-  createUser: (data: Partial<User>): Promise<ApiResponse<User>> =>
-    api.post("/users", data),
+  // Get user by ID (admin only)
+  getUserById: (id: string): Promise<ApiResponse<User>> =>
+    api.get(`/users/${id}`),
 
-  // Update user
+  // Update user (admin only)
   updateUser: (id: string, data: Partial<User>): Promise<ApiResponse<User>> =>
     api.put(`/users/${id}`, data),
 
-  // Delete user
+  // Delete user (admin only)
   deleteUser: (id: string): Promise<ApiResponse<void>> =>
     api.delete(`/users/${id}`),
 
-  // Register vehicle
-  registerVehicle: (userId: string, licensePlate: string): Promise<ApiResponse<Vehicle>> =>
-    api.post(`/users/${userId}/vehicles`, { licensePlate }),
+  // Update user balance (admin only)
+  updateUserBalance: (id: string, data: { amount: number; operation: "add" | "subtract" }): Promise<ApiResponse<any>> =>
+    api.put(`/users/${id}/balance`, data),
+
+  // User-specific APIs
+  // Get user's vehicles
+  getUserVehicles: (): Promise<ApiResponse<Vehicle[]>> =>
+    api.get("/users/vehicles"),
+
+  // Register new vehicle
+  registerVehicle: (data: { licensePlate: string; vehicleType: string }): Promise<ApiResponse<Vehicle>> =>
+    api.post("/users/vehicles", data),
+
+  // Remove vehicle
+  removeVehicle: (vehicleId: string): Promise<ApiResponse<any>> =>
+    api.delete(`/users/vehicles/${vehicleId}`),
+
+  // Get user's parking history
+  getUserParkingHistory: (params?: any): Promise<ApiResponse<ParkingRecord[]>> =>
+    api.get("/users/parking/history", { params }),
+
+  // Get user's active parking
+  getUserActiveParking: (): Promise<ApiResponse<ParkingRecord>> =>
+    api.get("/users/parking/active"),
+
+  // Get user's payment history
+  getUserPaymentHistory: (params?: any): Promise<ApiResponse<Payment[]>> =>
+    api.get("/users/payments/history", { params }),
+
+  // Get user dashboard stats
+  getUserDashboardStats: (): Promise<ApiResponse<any>> =>
+    api.get("/users/dashboard/stats"),
 };
 
 // Payments API
@@ -171,6 +202,41 @@ export const dashboardAPI = {
   // Get today revenue
   getTodayRevenue: (): Promise<ApiResponse<{ total: number; breakdown: any }>> =>
     api.get("/dashboard/revenue/today"),
+};
+
+// Subscriptions API
+export const subscriptionsAPI = {
+  // Get active subscription
+  getActiveSubscription: (): Promise<ApiResponse<Subscription>> =>
+    api.get("/subscriptions/active"),
+
+  // Get subscription history
+  getSubscriptionHistory: (params?: any): Promise<ApiResponse<Subscription[]>> =>
+    api.get("/subscriptions/history", { params }),
+
+  // Get subscription pricing
+  getSubscriptionPricing: (): Promise<ApiResponse<any>> =>
+    api.get("/subscriptions/pricing"),
+
+  // Create new subscription
+  createSubscription: (data: { 
+    type: "monthly" | "quarterly" | "yearly"; 
+    paymentMethod: "balance" | "qr"; 
+    vehicleLimit?: number 
+  }): Promise<ApiResponse<any>> =>
+    api.post("/subscriptions/create", data),
+
+  // Complete subscription payment
+  completeSubscriptionPayment: (data: { subscriptionId: string; transactionId: string }): Promise<ApiResponse<Subscription>> =>
+    api.post("/subscriptions/complete-payment", data),
+
+  // Cancel subscription
+  cancelSubscription: (id: string): Promise<ApiResponse<void>> =>
+    api.put(`/subscriptions/${id}/cancel`),
+
+  // Admin: Get all subscriptions
+  getAllSubscriptions: (params?: any): Promise<ApiResponse<Subscription[]>> =>
+    api.get("/subscriptions", { params }),
 };
 
 // Auth API

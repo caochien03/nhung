@@ -2,7 +2,6 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const helmet = require("helmet");
-const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 
 // Import routes
@@ -14,6 +13,7 @@ const paymentRoutes = require("./routes/payments");
 const dashboardRoutes = require("./routes/dashboard");
 const barrieRoutes = require("./routes/barrie");
 const cameraRoutes = require("./routes/camera");
+const subscriptionRoutes = require("./routes/subscriptions");
 
 // Import database and websocket
 const connectDB = require("./config/db");
@@ -36,9 +36,6 @@ const limiter = rateLimit({
   },
 });
 app.use(limiter);
-
-// Logging middleware
-app.use(morgan("combined"));
 
 // CORS configuration
 app.use(
@@ -73,6 +70,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/esp32", esp32Routes);
 app.use("/api/barrie", barrieRoutes);
 app.use("/api/camera", cameraRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
 
 // Root route
 app.get("/", (req, res) => {

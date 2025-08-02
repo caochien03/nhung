@@ -6,16 +6,22 @@ const { authenticateToken, authorizeRole } = require("../middleware/auth");
 // All routes require authentication
 router.use(authenticateToken);
 
-// Admin only routes
-router.get("/", authorizeRole("admin"), userController.getUsers);
-router.post("/", authorizeRole("admin"), userController.createUser);
-router.get("/:id", authorizeRole("admin"), userController.getUserById);
-router.put("/:id", authorizeRole("admin"), userController.updateUser);
-router.delete("/:id", authorizeRole("admin"), userController.deleteUser);
-router.put("/:id/balance", authorizeRole("admin"), userController.updateBalance);
+// User-specific routes (for regular users)
+router.get("/vehicles", userController.getUserVehicles);
+router.post("/vehicles", userController.registerVehicle);
+router.delete("/vehicles/:vehicleId", userController.removeVehicle);
+router.get("/parking/history", userController.getUserParkingHistory);
+router.get("/parking/active", userController.getUserActiveParking);
+router.get("/payments/history", userController.getUserPaymentHistory);
+router.get("/dashboard/stats", userController.getUserDashboardStats);
 
-// User vehicle management
-router.get("/:userId/vehicles", userController.getUserVehicles);
-router.post("/:userId/vehicles", userController.registerVehicle);
+// Admin-only routes
+router.use(authorizeRole("admin"));
+
+router.get("/", userController.getAllUsers);
+router.get("/:id", userController.getUserById);
+router.put("/:id", userController.updateUser);
+router.delete("/:id", userController.deleteUser);
+router.put("/:id/balance", userController.updateUserBalance);
 
 module.exports = router; 

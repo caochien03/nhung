@@ -39,6 +39,11 @@ const UserSchema = new mongoose.Schema({
   lastLogin: {
     type: Date,
   },
+  licensePlates: [{
+    type: String,
+    trim: true,
+    uppercase: true,
+  }],
 }, {
   timestamps: true,
 });
