@@ -63,6 +63,10 @@ export const parkingAPI = {
   // Complete parking record (vehicle exit)
   completeRecord: (id: string, data: { timeOut: Date; fee: number }): Promise<ApiResponse<ParkingRecord>> =>
     api.put(`/parking/${id}/complete`, data),
+
+  // Get pending payments (for staff confirmation)
+  getPendingPayments: (): Promise<ApiResponse<ParkingRecord[]>> =>
+    api.get("/parking/pending-payments"),
 };
 
 // ESP32 API
@@ -78,6 +82,12 @@ export const esp32API = {
   // Manual barrie control
   controlBarrie: (data: { barrieId: number; action: "open" | "close" }): Promise<ApiResponse<any>> =>
     api.post("/esp32/barrie", data),
+
+  // Confirm payment and open gate
+  confirmPayment: (data: { recordId: string; paymentMethod: string; confirmedBy: string }): Promise<ApiResponse<any>> => {
+    console.log('Calling confirmPayment API with data:', data);
+    return api.post("/esp32/confirm-payment", data);
+  },
 };
 
 // Barrie API

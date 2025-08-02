@@ -129,17 +129,60 @@ exports.getParkingRecords = async (req, res) => {
 exports.getActiveRecords = async (req, res) => {
   try {
     const records = await ParkingRecord.find({ 
-      status: "active" 
+      status: "active",
+      timeOut: { $exists: false } // Đảm bảo chưa có thời gian ra
     })
-    .populate("userId", "username email")
+    .populate("userId", "username email phone")
+    .populate("subscriptionId", "type startDate endDate")
     .sort({ timeIn: -1 });
+
+    // Tính toán thông tin bổ sung cho mỗi record
+    const enrichedRecords = records.map(record => {
+      const recordObj = record.toObject();
+      
+      // Tính thời gian đỗ hiện tại
+      const now = new Date();
+      const parkingDurationMs = now.getTime() - record.timeIn.getTime();
+      const hours = Math.floor(parkingDurationMs / (1000 * 60 * 60));
+      const minutes = Math.floor((parkingDurationMs % (1000 * 60 * 60)) / (1000 * 60));
+      
+      recordObj.currentDuration = `${hours}h ${minutes}m`;
+      recordObj.isRegisteredUser = !!record.userId;
+      
+      return recordObj;
+    });
+
+    res.json({
+      success: true,
+      data: enrichedRecords,
+    });
+  } catch (err) {
+    console.error("Get active records error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// Get records cần thanh toán (đã ra nhưng chưa thanh toán)
+exports.getPendingPayments = async (req, res) => {
+  try {
+    const records = await ParkingRecord.find({ 
+      status: "completed",
+      paymentStatus: "pending",
+      timeOut: { $exists: true },
+      fee: { $gt: 0 } // Chỉ lấy những record có phí > 0
+    })
+    .populate("userId", "username email phone")
+    .sort({ timeOut: -1 });
 
     res.json({
       success: true,
       data: records,
     });
   } catch (err) {
-    console.error("Get active records error:", err);
+    console.error("Get pending payments error:", err);
     res.status(500).json({
       success: false,
       message: "Internal server error",

@@ -14,6 +14,7 @@ const dashboardRoutes = require("./routes/dashboard");
 const barrieRoutes = require("./routes/barrie");
 const cameraRoutes = require("./routes/camera");
 const subscriptionRoutes = require("./routes/subscriptions");
+const testRoutes = require("./routes/test");
 
 // Import database and websocket
 const connectDB = require("./config/db");
@@ -71,6 +72,7 @@ app.use("/api/esp32", esp32Routes);
 app.use("/api/barrie", barrieRoutes);
 app.use("/api/camera", cameraRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
+app.use("/api", testRoutes); // Test routes không cần auth
 
 // Root route
 app.get("/", (req, res) => {

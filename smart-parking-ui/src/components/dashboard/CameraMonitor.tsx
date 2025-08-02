@@ -218,6 +218,18 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
             fee: result.fee,
             subscriptionUsed: result.subscriptionUsed,
           };
+        } else if (result.action === "OUT_PAYMENT_REQUIRED") {
+          displayText = `💰 CẦN THANH TOÁN!\nBiển số: ${result.exitPlate}\nThời gian đỗ: ${result.parkingDuration}\nPhí: ${result.fee}\n➡️ Vui lòng thanh toán tại quầy`;
+          
+          callbackData = {
+            licensePlate: result.exitPlate,
+            status: "💰 CẦN THANH TOÁN!",
+            details: `Phí: ${result.fee} | Thời gian: ${result.parkingDuration}`,
+            parkingDuration: result.parkingDuration,
+            fee: result.fee,
+            requiresStaffConfirmation: true,
+            parkingRecordId: result.parkingRecordId,
+          };
         } else if (result.action === "OUT_ERROR") {
           displayText = `❌ Lỗi: ${result.error}\nBiển số: ${result.licensePlate || "Không nhận diện được"}`;
           callbackData = {

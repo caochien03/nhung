@@ -21,7 +21,7 @@ export interface ParkingRecord {
   _id?: string;
   rfid: string;
   licensePlate: string;
-  userId?: string;
+  userId?: string | User; // Có thể là string hoặc populated User object
   timeIn: Date | string;
   timeOut?: Date | string;
   fee?: number;
@@ -36,6 +36,7 @@ export interface ParkingRecord {
   paymentMethod?: "qr" | "cash" | "balance" | "subscription";
   imageUrl?: string;
   isRegisteredUser?: boolean;
+  currentDuration?: string; // Thời gian đỗ hiện tại (từ backend)
   notes?: string;
 }
 

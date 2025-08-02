@@ -11,6 +11,7 @@ router.use(authenticateToken);
 
 router.get("/", parkingController.getParkingRecords);
 router.get("/active", parkingController.getActiveRecords);
+router.get("/pending-payments", authorizeRole("admin", "staff"), parkingController.getPendingPayments);
 router.get("/stats", authorizeRole("admin"), parkingController.getParkingStats);
 router.get("/:id", parkingController.getParkingRecordById);
 router.put("/:id/complete", authorizeRole("admin", "staff"), parkingController.completeRecord);

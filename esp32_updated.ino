@@ -53,8 +53,10 @@ unsigned long lastReadTime2 = 0;
 const unsigned long READ_DELAY = 2000; // 2 seconds delay between reads
 
 // Function prototypes
-void sendDataToBackend(int readerId, String cardId);
+bool sendDataToBackend(int readerId, String cardId);
 void blinkLedSuccess();
+void operateServo(int servoNumber);
+void beepCardDetected();
 
 void setup() {
   Serial.begin(115200);
@@ -237,19 +239,20 @@ void loop() {
         Serial.print("RFID #1 Card ID: ");
         Serial.println(cardId1);
 
+        // KÊU CÒI NGAY KHI QUẸT THẺ
+        beepCardDetected();
+
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("RFID #1: ");
+        lcd.print("Checking...");
         lcd.setCursor(0, 1);
         lcd.print(cardId1.substring(0, 8));
 
-        servo1.write(90);
-        delay(1000);
-        servo1.write(0);
-
-        blinkLedSuccess();  // ✅ LED nháy 2 lần
-
-        sendDataToBackend(1, cardId1);  // Camera 1 = RFID 1
+        // Gửi đến backend và chỉ quay servo khi thành công
+        if (sendDataToBackend(1, cardId1)) {
+          operateServo(1);
+          blinkLedSuccess();
+        }
       }
 
       rfid1.PICC_HaltA();
@@ -274,19 +277,20 @@ void loop() {
         Serial.print("RFID #2 Card ID: ");
         Serial.println(cardId2);
 
+        // KÊU CÒI NGAY KHI QUẸT THẺ
+        beepCardDetected();
+
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("RFID #2: ");
+        lcd.print("Checking...");
         lcd.setCursor(0, 1);
         lcd.print(cardId2.substring(0, 8));
 
-        servo2.write(90);
-        delay(1000);
-        servo2.write(0);
-
-        blinkLedSuccess();  // ✅ LED nháy 2 lần
-
-        sendDataToBackend(2, cardId2);  // Camera 2 = RFID 2
+        // Gửi đến backend và chỉ quay servo khi thành công
+        if (sendDataToBackend(2, cardId2)) {
+          operateServo(2);
+          blinkLedSuccess();
+        }
       }
 
       rfid2.PICC_HaltA();
@@ -297,7 +301,7 @@ void loop() {
   delay(100);
 }
 
-void sendDataToBackend(int readerId, String cardId) {
+bool sendDataToBackend(int readerId, String cardId) {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     http.begin(serverUrl);
@@ -330,34 +334,43 @@ void sendDataToBackend(int readerId, String cardId) {
       if (!error && responseDoc["message"] == "UID received successfully") {
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("UID sent!");
+        lcd.print("Access Granted!");
         lcd.setCursor(0, 1);
         lcd.print("Camera #" + String(readerId));
+        http.end();
+        return true;  // Thành công
       } else {
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("Server Error!");
+        lcd.print("Access Denied!");
         lcd.setCursor(0, 1);
-        lcd.print("Check response");
+        lcd.print("Invalid card");
+        http.end();
+        delay(3000);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Ready to scan");
+        lcd.setCursor(0, 1);
+        lcd.print("RFID cards...");
+        return false;  // Thất bại
       }
     } else {
       Serial.print("Error code: ");
       Serial.println(httpResponseCode);
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Send failed!");
+      lcd.print("Connection Error!");
       lcd.setCursor(0, 1);
       lcd.print("Error: " + String(httpResponseCode));
+      http.end();
+      delay(3000);
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Ready to scan");
+      lcd.setCursor(0, 1);
+      lcd.print("RFID cards...");
+      return false;  // Thất bại
     }
-
-    http.end();
-
-    delay(3000);
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Ready to scan");
-    lcd.setCursor(0, 1);
-    lcd.print("RFID cards...");
   } else {
     Serial.println("WiFi not connected!");
     lcd.clear();
@@ -365,6 +378,7 @@ void sendDataToBackend(int readerId, String cardId) {
     lcd.print("WiFi Error!");
     lcd.setCursor(0, 1);
     lcd.print("Reconnecting...");
+    return false;  // Thất bại
   }
 }
 
@@ -380,4 +394,51 @@ void blinkLedSuccess() {
     // tone(LED_PIN, 2000, 200);  // 2000Hz for 200ms
     // delay(400);
   }
+}
+
+void operateServo(int servoNumber) {
+  Serial.print("Operating servo #");
+  Serial.println(servoNumber);
+  
+  if (servoNumber == 1) {
+    servo1.write(90);
+    delay(1000);
+    servo1.write(0);
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Gate #1 Opened!");
+    lcd.setCursor(0, 1);
+    lcd.print("Welcome!");
+  } else if (servoNumber == 2) {
+    servo2.write(90);
+    delay(1000);
+    servo2.write(0);
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Gate #2 Opened!");
+    lcd.setCursor(0, 1);
+    lcd.print("Welcome!");
+  }
+  
+  delay(2000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Ready to scan");
+  lcd.setCursor(0, 1);
+  lcd.print("RFID cards...");
+}
+
+void beepCardDetected() {
+  // Tiếng còi ngắn để báo hiệu đã quẹt thẻ
+  Serial.println("BEEP: Card detected!");
+  
+  // Method 1: Digital ON/OFF (for Active Buzzer)
+  digitalWrite(LED_PIN, HIGH);
+  delay(100);  // Ngắn hơn để phân biệt với tiếng thành công
+  digitalWrite(LED_PIN, LOW);
+  
+  // Method 2: PWM Tone (for Passive Buzzer) - Uncomment if needed
+  // tone(LED_PIN, 1000, 100);  // 1000Hz for 100ms, khác với tiếng thành công
 }

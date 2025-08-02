@@ -40,25 +40,28 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ stats }) => {
       value: `${stats.todayRevenue.toLocaleString()} VND`,
       icon: DollarSign,
       color: "bg-green-500",
-      change: "+12% so với hôm qua",
+      change: `Tổng: ${stats.totalRevenue.toLocaleString()} VND`,
     },
     {
       title: "Xe đang đỗ",
       value: stats.activeParkings,
       icon: Car,
       color: "bg-blue-500",
+      change: "Đang hoạt động",
     },
     {
-      title: "Tổng xe",
+      title: "Xe vào hôm nay",
       value: stats.totalVehicles,
       icon: Users,
       color: "bg-purple-500",
+      change: `Khách vãng lai: ${stats.walkInUsers}`,
     },
     {
-      title: "Người dùng đăng ký",
+      title: "Users đăng ký",
       value: stats.registeredUsers,
       icon: Clock,
       color: "bg-orange-500",
+      change: "Tài khoản hoạt động",
     },
   ];
 

@@ -18,37 +18,47 @@ exports.getStats = async (req, res) => {
       totalVehicles,
       registeredUsers,
       walkInUsers,
+      todayParkings,
     ] = await Promise.all([
-      // Total revenue
-      Payment.aggregate([
-        { $match: { status: "completed" } },
-        { $group: { _id: null, total: { $sum: "$amount" } } },
+      // Total revenue từ ParkingRecord với fee
+      ParkingRecord.aggregate([
+        { $match: { status: "completed", fee: { $gt: 0 } } },
+        { $group: { _id: null, total: { $sum: "$fee" } } },
       ]),
       
-      // Today's revenue
-      Payment.aggregate([
+      // Today's revenue từ ParkingRecord
+      ParkingRecord.aggregate([
         { 
           $match: { 
             status: "completed",
-            createdAt: { $gte: today, $lt: tomorrow }
+            fee: { $gt: 0 },
+            timeOut: { $gte: today, $lt: tomorrow }
           } 
         },
-        { $group: { _id: null, total: { $sum: "$amount" } } },
+        { $group: { _id: null, total: { $sum: "$fee" } } },
       ]),
       
-      // Active parkings
-      ParkingRecord.countDocuments({ status: "active" }),
+      // Active parkings (xe đang đỗ)
+      ParkingRecord.countDocuments({ 
+        status: "active",
+        timeOut: { $exists: false }
+      }),
       
-      // Total vehicles
+      // Total vehicles đã đăng ký
       Vehicle.countDocuments({ isActive: true }),
       
       // Registered users
       User.countDocuments({ role: "user", isActive: true }),
       
-      // Walk-in users (parking records without userId)
+      // Walk-in users hôm nay (parking records không có userId)
       ParkingRecord.countDocuments({ 
         userId: { $exists: false },
-        status: "completed"
+        timeIn: { $gte: today, $lt: tomorrow }
+      }),
+      
+      // Tổng số xe vào hôm nay
+      ParkingRecord.countDocuments({
+        timeIn: { $gte: today, $lt: tomorrow }
       }),
     ]);
 
@@ -58,7 +68,7 @@ exports.getStats = async (req, res) => {
         totalRevenue: totalRevenue[0]?.total || 0,
         todayRevenue: todayRevenue[0]?.total || 0,
         activeParkings,
-        totalVehicles,
+        totalVehicles: todayParkings, // Số xe vào hôm nay thay vì tổng xe đăng ký
         registeredUsers,
         walkInUsers,
       },

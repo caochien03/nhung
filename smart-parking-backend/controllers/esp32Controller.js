@@ -263,6 +263,7 @@ exports.autoCapture = async (req, res) => {
                 userId: userId,
                 timeIn: new Date(),
                 cameraIndex: cameraIndex,
+                status: "active", // Đảm bảo set status active
                 paymentType: paymentType,
                 subscriptionId: subscriptionId,
                 paymentMethod: paymentType === "subscription" ? "subscription" : undefined,
@@ -370,12 +371,44 @@ exports.autoCapture = async (req, res) => {
                 existingRecord.subscriptionDiscount = feeInfo.subscriptionDiscount || 0;
                 existingRecord.status = "completed";
                 existingRecord.paymentMethod = paymentMethod;
-                existingRecord.paymentStatus = paymentStatus;
+                
+                // Chỉ set paid nếu là subscription, còn lại để pending
+                if (hasSubscription) {
+                    existingRecord.paymentStatus = "paid";
+                } else {
+                    existingRecord.paymentStatus = "pending"; // Chờ nhân viên xác nhận
+                }
+                
                 await existingRecord.save();
 
+                // Nếu cần thanh toán, gửi WebSocket notification cho staff
+                if (!hasSubscription && feeInfo.fee > 0) {
+                    const paymentNotification = {
+                        type: "payment_required",
+                        parkingRecord: {
+                            _id: existingRecord._id,
+                            licensePlate: exitPlate,
+                            timeIn: timeIn,
+                            timeOut: timeOut,
+                            fee: feeInfo.fee,
+                            feeType: feeInfo.feeType,
+                            parkingDuration: durationDisplay,
+                            paymentStatus: "pending"
+                        },
+                        message: "Xe cần thanh toán - Vui lòng xác nhận",
+                        timestamp: new Date(),
+                    };
+
+                    wsClients.forEach((ws) => {
+                        if (ws.readyState === 1) {
+                            ws.send(JSON.stringify(paymentNotification));
+                        }
+                    });
+                }
+
                 res.json({
-                    message: "Vehicle exited - Fee calculated",
-                    action: "OUT",
+                    message: hasSubscription ? "Vehicle exited - Subscription used" : "Vehicle exited - Payment required",
+                    action: hasSubscription ? "OUT_SUBSCRIPTION" : "OUT_PAYMENT_REQUIRED",
                     uid: uid,
                     entryPlate: entryPlate,
                     exitPlate: exitPlate,
@@ -400,6 +433,9 @@ exports.autoCapture = async (req, res) => {
                     paymentType: existingRecord.paymentType,
                     subscriptionUsed: existingRecord.paymentType === "subscription",
                     subscriptionDiscount: feeInfo.subscriptionDiscount > 0 ? `${feeInfo.subscriptionDiscount.toLocaleString()} VND` : null,
+                    paymentStatus: existingRecord.paymentStatus,
+                    requiresStaffConfirmation: !hasSubscription, // Cần xác nhận nhân viên
+                    parkingRecordId: existingRecord._id, // ID để xác nhận thanh toán
                     entryInfo: `${entryPlate} - ${timeIn.toLocaleTimeString(
                         "vi-VN",
                         { hour12: false }
@@ -445,5 +481,97 @@ exports.autoCapture = async (req, res) => {
                 processing: false 
             });
         }
+    }
+};
+
+// API để nhân viên xác nhận thanh toán và mở cổng
+exports.confirmPayment = async (req, res) => {
+    try {
+        const { parkingRecordId, recordId, paymentMethod = "cash", staffNote } = req.body;
+        
+        // Support both parameter names for compatibility
+        const actualRecordId = parkingRecordId || recordId;
+        
+        console.log('Confirm payment request:', { actualRecordId, paymentMethod, body: req.body });
+
+        if (!actualRecordId) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing parking record ID"
+            });
+        }
+
+        const record = await ParkingRecord.findById(actualRecordId);
+        if (!record) {
+            return res.status(404).json({
+                success: false,
+                message: "Parking record not found"
+            });
+        }
+
+        if (record.paymentStatus === "paid") {
+            return res.status(400).json({
+                success: false,
+                message: "Payment already confirmed"
+            });
+        }
+
+        // Cập nhật trạng thái thanh toán
+        record.paymentStatus = "paid";
+        record.paymentMethod = paymentMethod;
+        if (staffNote) {
+            record.notes = staffNote;
+        }
+        await record.save();
+
+        // Gửi lệnh mở cổng qua WebSocket
+        const gateCommand = {
+            type: "open_gate",
+            cameraIndex: 2, // Cổng ra
+            licensePlate: record.licensePlate,
+            reason: "payment_confirmed",
+            amount: record.fee,
+            paymentMethod: paymentMethod,
+            timestamp: new Date(),
+        };
+
+        wsClients.forEach((ws) => {
+            if (ws.readyState === 1) {
+                ws.send(JSON.stringify(gateCommand));
+            }
+        });
+
+        // Broadcast payment completion để cập nhật UI
+        const paymentNotification = {
+            type: "payment_completed",
+            parkingRecord: record,
+            timestamp: new Date(),
+        };
+
+        wsClients.forEach((ws) => {
+            if (ws.readyState === 1) {
+                ws.send(JSON.stringify(paymentNotification));
+            }
+        });
+
+        res.json({
+            success: true,
+            message: "Payment confirmed - Gate opened",
+            data: {
+                parkingRecordId: record._id,
+                licensePlate: record.licensePlate,
+                amount: record.fee,
+                paymentMethod: paymentMethod,
+                gateOpened: true
+            }
+        });
+
+    } catch (err) {
+        console.error("Lỗi khi xác nhận thanh toán:", err);
+        res.status(500).json({ 
+            success: false, 
+            message: "Internal server error",
+            error: err.message 
+        });
     }
 };

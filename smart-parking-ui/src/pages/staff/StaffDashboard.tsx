@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Car, DollarSign, Users, Clock, Camera, Lock } from "lucide-react";
+import { Car, DollarSign, Users, Clock, Camera, Lock, CreditCard } from "lucide-react";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import CameraMonitor from "../../components/dashboard/CameraMonitor";
 import PaymentManager from "../../components/dashboard/PaymentManager";
+import PaymentConfirmation from "../../components/dashboard/PaymentConfirmation";
+import PaymentPopup from "../../components/dashboard/PaymentPopup";
+import PaymentDebugger from "../../components/debug/PaymentDebugger";
 import BarrieControl from "../../components/dashboard/BarrieControl";
 import CameraManagement from "../../components/dashboard/CameraManagement";
-import { DashboardStats, ParkingRecord } from "../../types";
+import { DashboardStats, ParkingRecord, User } from "../../types";
 import { dashboardAPI, parkingAPI } from "../../services/api";
 import wsService from "../../services/websocket";
 
@@ -21,7 +24,8 @@ const StaffDashboard: React.FC = () => {
   const [activeParkings, setActiveParkings] = useState<ParkingRecord[]>([]);
   const [selectedParking, setSelectedParking] = useState<ParkingRecord | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "cameras" | "barrie" | "payments">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "cameras" | "barrie" | "payments" | "confirm-payments">("overview");
+  const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
   
   // Camera refs để gọi auto capture
   const camera1Ref = useRef<any>(null);
@@ -39,13 +43,23 @@ const StaffDashboard: React.FC = () => {
     setTimeout(() => {
       console.log("Test WebSocket listeners:", wsService);
     }, 2000);
+
+    // Auto refresh data mỗi 30 giây
+    const refreshInterval = setInterval(() => {
+      loadDashboardData();
+    }, 30000);
+
+    return () => {
+      clearInterval(refreshInterval);
+    };
   }, []);
 
   const loadDashboardData = async () => {
     try {
-      const [statsResponse, parkingsResponse] = await Promise.all([
+      const [statsResponse, parkingsResponse, pendingPaymentsResponse] = await Promise.all([
         dashboardAPI.getStats(),
         parkingAPI.getActiveRecords(),
+        parkingAPI.getPendingPayments(),
       ]);
 
       if (statsResponse.success && statsResponse.data) {
@@ -60,6 +74,10 @@ const StaffDashboard: React.FC = () => {
           timeOut: parking.timeOut ? new Date(parking.timeOut) : undefined,
         }));
         setActiveParkings(processedParkings);
+      }
+
+      if (pendingPaymentsResponse.success && pendingPaymentsResponse.data) {
+        setPendingPaymentsCount(pendingPaymentsResponse.data.length);
       }
     } catch (error) {
       console.error("Error loading dashboard data:", error);
@@ -103,6 +121,23 @@ const StaffDashboard: React.FC = () => {
       }));
     });
 
+    // Listen for payment required notifications
+    wsService.subscribe("payment_required", (data: any) => {
+      console.log("🔔 New payment required in StaffDashboard:", data);
+      setPendingPaymentsCount(prev => prev + 1);
+      
+      // Auto switch to confirm-payments tab if currently on overview
+      if (activeTab === "overview") {
+        setActiveTab("confirm-payments");
+      }
+    });
+
+    // Listen for payment completed notifications  
+    wsService.subscribe("payment_completed", (data: any) => {
+      console.log("✅ Payment completed in StaffDashboard:", data);
+      setPendingPaymentsCount(prev => Math.max(0, prev - 1));
+    });
+
     // Listen for auto capture requests from ESP32
     wsService.subscribe("auto_capture", (message: any) => {
       console.log("🎯 Nhận WebSocket auto_capture:", message);
@@ -144,6 +179,9 @@ const StaffDashboard: React.FC = () => {
       ...prev,
       todayRevenue: prev.todayRevenue + payment.amount,
     }));
+    
+    // Decrease pending payments count
+    setPendingPaymentsCount(prev => Math.max(0, prev - 1));
     
     if (selectedParking) {
       const parkingId = selectedParking.id || selectedParking._id;
@@ -227,6 +265,24 @@ const StaffDashboard: React.FC = () => {
                 <span>Thanh toán</span>
               </div>
             </button>
+            <button
+              onClick={() => setActiveTab("confirm-payments")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "confirm-payments"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <CreditCard className="h-4 w-4" />
+                <span>Xác nhận TT</span>
+                {pendingPaymentsCount > 0 && (
+                  <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full animate-pulse">
+                    {pendingPaymentsCount}
+                  </span>
+                )}
+              </div>
+            </button>
           </nav>
         </div>
 
@@ -307,11 +363,33 @@ const StaffDashboard: React.FC = () => {
                           onClick={() => setSelectedParking(parking)}
                         >
                           <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-medium">{parking.licensePlate}</p>
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-2">
+                                <p className="font-medium">{parking.licensePlate}</p>
+                                {parking.isRegisteredUser && (
+                                  <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
+                                    Đăng ký
+                                  </span>
+                                )}
+                                {parking.paymentType === "subscription" && (
+                                  <span className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">
+                                    Vé tháng
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-sm text-gray-600">
                                 Vào: {new Date(parking.timeIn).toLocaleTimeString("vi-VN", { hour12: false })}
                               </p>
+                              {parking.currentDuration && (
+                                <p className="text-xs text-gray-500">
+                                  Đã đỗ: {parking.currentDuration}
+                                </p>
+                              )}
+                              {parking.userId && typeof parking.userId === 'object' && 'username' in parking.userId && (
+                                <p className="text-xs text-blue-600">
+                                  User: {(parking.userId as User).username}
+                                </p>
+                              )}
                             </div>
                             <div className="text-right">
                               <p className="text-sm text-gray-600">ID: {parking.id ? parking.id.slice(-6) : parking._id ? parking._id.slice(-6) : 'N/A'}</p>
@@ -327,6 +405,9 @@ const StaffDashboard: React.FC = () => {
                                   )}
                                 </div>
                               )}
+                              <p className="text-xs text-gray-400">
+                                RFID: {parking.rfid}
+                              </p>
                             </div>
                           </div>
                         </div>
@@ -376,11 +457,28 @@ const StaffDashboard: React.FC = () => {
                         onClick={() => setSelectedParking(parking)}
                       >
                         <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium">{parking.licensePlate}</p>
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2">
+                              <p className="font-medium">{parking.licensePlate}</p>
+                              {parking.isRegisteredUser && (
+                                <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
+                                  Đăng ký
+                                </span>
+                              )}
+                              {parking.paymentType === "subscription" && (
+                                <span className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">
+                                  Vé tháng
+                                </span>
+                              )}
+                            </div>
                             <p className="text-sm text-gray-600">
                               Vào: {new Date(parking.timeIn).toLocaleTimeString("vi-VN", { hour12: false })}
                             </p>
+                            {parking.currentDuration && (
+                              <p className="text-xs text-gray-500">
+                                Đã đỗ: {parking.currentDuration}
+                              </p>
+                            )}
                           </div>
                           <div className="text-right">
                             <p className="text-sm text-gray-600">ID: {parking.id ? parking.id.slice(-6) : parking._id ? parking._id.slice(-6) : 'N/A'}</p>
@@ -412,8 +510,24 @@ const StaffDashboard: React.FC = () => {
               )}
             </div>
           )}
+
+          {/* Payment Confirmation Tab */}
+          {activeTab === "confirm-payments" && (
+            <div className="space-y-6">
+              <PaymentConfirmation />
+              
+              {/* Debug section - Remove in production */}
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-semibold mb-4 text-gray-600">Debug Tools (Development)</h3>
+                <PaymentDebugger />
+              </div>
+            </div>
+          )}
         </div>
       </div>
+      
+      {/* Auto Payment Popup - Hovers over everything */}
+      <PaymentPopup autoShow={true} />
     </div>
   );
 };
