@@ -112,11 +112,17 @@ app.use((error, req, res, next) => {
 // Connect to MongoDB
 connectDB();
 
+// Start subscription background jobs
+const { startSubscriptionJobs } = require("./jobs/subscriptionJobs");
+startSubscriptionJobs();
+
 // Create HTTP server and setup WebSocket
 const server = http.createServer(app);
 setupWebSocket(server);
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`app running on port ${PORT}`);
+  console.log(`🚀 Smart Parking System API running on port ${PORT}`);
+  console.log(`📊 WebSocket server ready for real-time communication`);
+  console.log(`🎫 Subscription management system active`);
 });

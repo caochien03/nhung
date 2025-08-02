@@ -27,7 +27,65 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-    // Liệt kê tất cả camera
+  // Key để lưu camera setting trong localStorage
+  const CAMERA_STORAGE_KEY = `selectedCamera_${cameraIndex}_${logicIndex || cameraIndex}_${title.replace(/\s+/g, '_')}`;
+
+  // Hàm lưu camera đã chọn vào localStorage
+  const saveSelectedCamera = (camera: MediaDeviceInfo | null) => {
+    if (camera) {
+      const cameraData = {
+        deviceId: camera.deviceId,
+        label: camera.label,
+        kind: camera.kind,
+        cameraIndex: cameraIndex, // Thêm cameraIndex để phân biệt
+        logicIndex: logicIndex || cameraIndex,
+        title: title // Thêm title để phân biệt
+      };
+      localStorage.setItem(CAMERA_STORAGE_KEY, JSON.stringify(cameraData));
+      console.log(`💾 [${title}] Đã lưu camera với key "${CAMERA_STORAGE_KEY}":`, camera.label);
+    } else {
+      localStorage.removeItem(CAMERA_STORAGE_KEY);
+      console.log(`🗑️ [${title}] Đã xóa camera setting với key "${CAMERA_STORAGE_KEY}"`);
+    }
+  };
+
+  // Hàm khôi phục camera đã chọn từ localStorage
+  const loadSelectedCamera = (availableCameras: MediaDeviceInfo[]) => {
+    try {
+      const saved = localStorage.getItem(CAMERA_STORAGE_KEY);
+      console.log(`🔍 [${title}] Đang tìm camera đã lưu với key "${CAMERA_STORAGE_KEY}":`, saved ? "Có" : "Không");
+      
+      if (saved) {
+        const cameraData = JSON.parse(saved);
+        
+        // Với camera trùng tên/ID, ưu tiên theo thứ tự deviceId trước, sau đó theo cameraIndex
+        let foundCamera = availableCameras.find(cam => cam.deviceId === cameraData.deviceId);
+        
+        // Nếu không tìm thấy exact deviceId, tìm theo cameraIndex và label
+        if (!foundCamera && cameraData.cameraIndex !== undefined) {
+          console.log(`⚠️ [${title}] DeviceId không khớp, thử tìm theo cameraIndex[${cameraData.cameraIndex}]`);
+          foundCamera = availableCameras[cameraData.cameraIndex];
+          
+          // Kiểm tra xem camera tại vị trí cameraIndex có cùng label không
+          if (foundCamera && foundCamera.label !== cameraData.label) {
+            console.log(`⚠️ [${title}] Camera tại index[${cameraData.cameraIndex}] có label khác: "${foundCamera.label}" vs "${cameraData.label}"`);
+          }
+        }
+        
+        if (foundCamera) {
+          console.log(`🔄 [${title}] Đã khôi phục camera:`, foundCamera.label, `(DeviceID: ${foundCamera.deviceId})`);
+          return foundCamera;
+        } else {
+          console.log(`⚠️ [${title}] Camera đã lưu không tìm thấy, sẽ chọn camera mặc định`);
+        }
+      }
+    } catch (err) {
+      console.error(`❌ [${title}] Lỗi khi khôi phục camera đã lưu:`, err);
+    }
+    return null;
+  };
+
+        // Liệt kê tất cả camera
   useEffect(() => {
     const listCameras = async () => {
       try {
@@ -39,11 +97,22 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
         const videoDevices = devices.filter(device => device.kind === "videoinput");
         setCameras(videoDevices);
 
-        // Chọn camera theo index và tự động bắt đầu
-        if (videoDevices[cameraIndex]) {
-          setSelectedCamera(videoDevices[cameraIndex]);
+        // Khôi phục camera đã lưu trước, nếu không có thì chọn theo index
+        const savedCamera = loadSelectedCamera(videoDevices);
+        if (savedCamera) {
+          setSelectedCamera(savedCamera);
+        } else if (videoDevices[cameraIndex]) {
+          const defaultCamera = videoDevices[cameraIndex];
+          console.log(`🎯 [${title}] Chọn camera mặc định theo cameraIndex[${cameraIndex}]:`, defaultCamera.label);
+          setSelectedCamera(defaultCamera);
+          saveSelectedCamera(defaultCamera); // Lưu camera mặc định
         } else if (videoDevices.length > 0) {
-          setSelectedCamera(videoDevices[0]);
+          const firstCamera = videoDevices[0];
+          console.log(`🎯 [${title}] Chọn camera đầu tiên làm fallback:`, firstCamera.label);
+          setSelectedCamera(firstCamera);
+          saveSelectedCamera(firstCamera); // Lưu camera đầu tiên
+        } else {
+          console.log(`❌ [${title}] Không tìm thấy camera nào`);
         }
       } catch (err) {
         console.error("Lỗi khi liệt kê camera:", err);
@@ -83,6 +152,7 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
           setIsStreaming(true);
           setStatus("online");
           setLastUpdate(new Date());
+          console.log(`✅ Camera ${title} đã bắt đầu streaming:`, selectedCamera.label);
         }
       } catch (err: any) {
         console.error("Lỗi khi truy cập camera:", err);
@@ -92,6 +162,7 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
       }
     };
 
+    // Tự động bắt đầu camera ngay khi đã có selectedCamera
     startCamera();
 
     return () => {
@@ -99,11 +170,15 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
         streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
-  }, [selectedCamera, cameraIndex]);
+  }, [selectedCamera, cameraIndex, title]);
 
   const handleCameraChange = (deviceId: string) => {
     const camera = cameras.find(cam => cam.deviceId === deviceId);
-    setSelectedCamera(camera || null);
+    if (camera) {
+      console.log(`📹 [${title}] User đã chọn camera mới:`, camera.label);
+      setSelectedCamera(camera);
+      saveSelectedCamera(camera); // Lưu camera mới chọn
+    }
   };
 
   const captureImage = async () => {
@@ -352,6 +427,7 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
             }
             
             setSelectedCamera(cameraToUse);
+            saveSelectedCamera(cameraToUse); // Lưu camera đã chọn
             setCameras(videoDevices);
           }
           
@@ -387,47 +463,73 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
     }
   };
 
+  const resetCameraSettings = () => {
+    localStorage.removeItem(CAMERA_STORAGE_KEY);
+    console.log(`🗑️ Đã xóa setting camera cho ${title}`);
+    
+    // Chọn lại camera mặc định theo cameraIndex
+    if (cameras[cameraIndex]) {
+      const defaultCamera = cameras[cameraIndex];
+      setSelectedCamera(defaultCamera);
+      saveSelectedCamera(defaultCamera);
+    } else if (cameras.length > 0) {
+      const firstCamera = cameras[0];
+      setSelectedCamera(firstCamera);
+      saveSelectedCamera(firstCamera);
+    }
+  };
+
   useImperativeHandle(ref, () => ({
     autoCaptureFromWS,
   }));
 
   const getCameraName = () => {
-    return selectedCamera ? (selectedCamera.label || `Camera ${cameraIndex + 1}`) : `Camera ${cameraIndex + 1}`;
+    if (selectedCamera) {
+      const baseName = selectedCamera.label || `Camera ${cameraIndex + 1}`;
+      const deviceIdShort = selectedCamera.deviceId.slice(-8);
+      return `${baseName} (${deviceIdShort})`;
+    }
+    return `Camera ${cameraIndex + 1}`;
   };
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2">
-          <Camera className="h-5 w-5 text-blue-600" />
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-            <p className="text-sm text-gray-500">{getCameraName()}</p>
-          </div>
-        </div>
-        <div className="flex items-center space-x-2">
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-            status === "online" ? "bg-green-100 text-green-800" : 
-            status === "error" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"
-          }`}>
-            {status === "online" ? "Đang hoạt động" : status === "error" ? "Lỗi" : "Chờ kích hoạt"}
-          </span>
-        </div>
-      </div>
-
       {/* Dropdown chọn camera */}
       {cameras.length > 1 && (
-        <select
-          value={selectedCamera?.deviceId || ""}
-          onChange={(e) => handleCameraChange(e.target.value)}
-          className="w-full mb-4 p-2 border border-gray-300 rounded-md"
-        >
-          {cameras.map((camera, index) => (
-            <option key={camera.deviceId} value={camera.deviceId}>
-              {camera.label || `Camera ${index + 1}`}
-            </option>
-          ))}
-        </select>
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">Chọn camera:</label>
+            <div className="flex items-center space-x-2">
+              {localStorage.getItem(CAMERA_STORAGE_KEY) && (
+                <button
+                  onClick={resetCameraSettings}
+                  className="text-xs text-red-600 hover:text-red-800 underline"
+                  title="Xóa camera đã lưu và chọn mặc định"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+          <select
+            value={selectedCamera?.deviceId || ""}
+            onChange={(e) => handleCameraChange(e.target.value)}
+            className="w-full p-2 border border-gray-300 rounded-md"
+          >
+            {cameras.map((camera, index) => {
+              // Tạo tên camera với thông tin phân biệt
+              const baseName = camera.label || `Camera ${index + 1}`;
+              const deviceIdShort = camera.deviceId.slice(-8); // Lấy 8 ký tự cuối của deviceId
+              const displayName = `${baseName} (${deviceIdShort}) [Index: ${index}]`;
+              
+              return (
+                <option key={camera.deviceId} value={camera.deviceId}>
+                  {displayName}
+                </option>
+              );
+            })}
+          </select>
+        </div>
       )}
 
       {/* Thông báo hướng dẫn */}
@@ -547,32 +649,6 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicI
       {/* Kết quả nhận diện biển số */}
       <div className="min-h-20 border border-gray-300 bg-gray-50 p-3 rounded-lg text-center text-sm whitespace-pre-line leading-relaxed">
         <span className="text-gray-700">{licensePlate}</span>
-      </div>
-
-      {/* Camera Info */}
-      <div className="grid grid-cols-2 gap-4 text-sm mt-4">
-        <div>
-          <p className="text-gray-600">Camera</p>
-          <p className="font-medium">{getCameraName()}</p>
-        </div>
-        <div>
-          <p className="text-gray-600">Cập nhật cuối</p>
-          <p className="font-medium">
-            {lastUpdate ? lastUpdate.toLocaleTimeString("vi-VN") : "Chưa có"}
-          </p>
-        </div>
-        <div>
-          <p className="text-gray-600">Trạng thái</p>
-          <p className="font-medium">
-            {isStreaming ? "Đang stream" : status === "error" ? "Lỗi" : "Chưa kích hoạt"}
-          </p>
-        </div>
-        <div>
-          <p className="text-gray-600">Camera có sẵn</p>
-          <p className="font-medium">
-            {cameras.length > 0 ? `${cameras.length} camera` : "Đang tìm..."}
-          </p>
-        </div>
       </div>
     </div>
   );

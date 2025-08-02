@@ -240,6 +240,13 @@ export const subscriptionsAPI = {
   completeSubscriptionPayment: (data: { subscriptionId: string; transactionId: string }): Promise<ApiResponse<Subscription>> =>
     api.post("/subscriptions/complete-payment", data),
 
+  // Extend subscription
+  extendSubscription: (data: { 
+    subscriptionId: string; 
+    extensionType: "monthly" | "quarterly" | "yearly" 
+  }): Promise<ApiResponse<any>> =>
+    api.post("/subscriptions/extend", data),
+
   // Cancel subscription
   cancelSubscription: (id: string): Promise<ApiResponse<void>> =>
     api.put(`/subscriptions/${id}/cancel`),
@@ -247,6 +254,18 @@ export const subscriptionsAPI = {
   // Admin: Get all subscriptions
   getAllSubscriptions: (params?: any): Promise<ApiResponse<Subscription[]>> =>
     api.get("/subscriptions", { params }),
+
+  // Admin/Staff: Get subscription statistics
+  getSubscriptionStats: (): Promise<ApiResponse<{
+    totalActive: number;
+    totalExpired: number;
+    monthlyRevenue: number;
+    yearlyRevenue: number;
+    typeDistribution: Array<{ _id: string; count: number }>;
+    expiringNext7Days: number;
+    conversionRate: number;
+  }>> =>
+    api.get("/subscriptions/stats"),
 };
 
 // Auth API

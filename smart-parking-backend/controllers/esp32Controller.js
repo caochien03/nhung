@@ -244,7 +244,7 @@ exports.autoCapture = async (req, res) => {
                 if (vehicle && vehicle.userId) {
                     userId = vehicle.userId._id;
                     
-                    // Kiểm tra vé tháng
+                    // Kiểm tra vé tháng với logic cải tiến
                     const subscriptionCheck = await subscriptionController.checkSubscriptionForParking(
                         userId, 
                         licensePlate
@@ -253,6 +253,33 @@ exports.autoCapture = async (req, res) => {
                     if (subscriptionCheck.hasSubscription && subscriptionCheck.canUse) {
                         paymentType = "subscription";
                         subscriptionId = subscriptionCheck.subscription._id;
+                        
+                        // Log thông tin sử dụng vé tháng
+                        console.log(`✅ Subscription used - User: ${vehicle.userId.username}, 
+                                   Vehicle: ${licensePlate}, 
+                                   Remaining days: ${subscriptionCheck.remainingDays},
+                                   Vehicles parked: ${subscriptionCheck.currentlyParked}/${subscriptionCheck.vehicleLimit}`);
+                    } else if (subscriptionCheck.hasSubscription && !subscriptionCheck.canUse) {
+                        // Có vé tháng nhưng không thể sử dụng (vượt quá giới hạn)
+                        console.log(`⚠️ Subscription limit exceeded - ${subscriptionCheck.reason}`);
+                        
+                        res.json({
+                            message: `Vehicle limit exceeded: ${subscriptionCheck.reason}`,
+                            action: "IN_SUBSCRIPTION_LIMIT_EXCEEDED",
+                            uid: uid,
+                            licensePlate: licensePlate,
+                            cameraIndex: cameraIndex,
+                            subscriptionInfo: {
+                                hasSubscription: true,
+                                canUse: false,
+                                reason: subscriptionCheck.reason,
+                                vehicleLimit: subscriptionCheck.subscription?.vehicleLimit,
+                                currentlyParked: subscriptionCheck.currentlyParked
+                            },
+                            shouldOpenGate: false,
+                            timestamp: new Date(),
+                        });
+                        return;
                     }
                 }
             }

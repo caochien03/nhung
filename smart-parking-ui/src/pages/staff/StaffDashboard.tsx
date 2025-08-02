@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Car, DollarSign, Users, Clock, Camera, Lock, CreditCard } from "lucide-react";
+import { Car, DollarSign, Users, Clock, Camera, Lock, CreditCard, Calendar } from "lucide-react";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import CameraMonitor from "../../components/dashboard/CameraMonitor";
 import PaymentManager from "../../components/dashboard/PaymentManager";
@@ -8,6 +8,7 @@ import PaymentPopup from "../../components/dashboard/PaymentPopup";
 import PaymentDebugger from "../../components/debug/PaymentDebugger";
 import BarrieControl from "../../components/dashboard/BarrieControl";
 import CameraManagement from "../../components/dashboard/CameraManagement";
+import SubscriptionStatsPanel from "../../components/dashboard/SubscriptionStatsPanel";
 import { DashboardStats, ParkingRecord, User } from "../../types";
 import { dashboardAPI, parkingAPI } from "../../services/api";
 import wsService from "../../services/websocket";
@@ -24,7 +25,7 @@ const StaffDashboard: React.FC = () => {
   const [activeParkings, setActiveParkings] = useState<ParkingRecord[]>([]);
   const [selectedParking, setSelectedParking] = useState<ParkingRecord | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "cameras" | "barrie" | "payments" | "confirm-payments">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "cameras" | "barrie" | "payments" | "confirm-payments" | "subscriptions">("overview");
   const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
   
   // Camera refs để gọi auto capture
@@ -283,6 +284,19 @@ const StaffDashboard: React.FC = () => {
                 )}
               </div>
             </button>
+            <button
+              onClick={() => setActiveTab("subscriptions")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "subscriptions"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Calendar className="h-4 w-4" />
+                <span>Vé tháng</span>
+              </div>
+            </button>
           </nav>
         </div>
 
@@ -320,26 +334,6 @@ const StaffDashboard: React.FC = () => {
                       logicIndex={2}
                       title="Camera Cổng Ra" 
                     />
-                  </div>
-                </div>
-
-                {/* Camera Status Summary */}
-                <div className="bg-white rounded-lg shadow-md p-4">
-                  <div className="grid grid-cols-2 gap-4 text-center">
-                    <div className="p-3 bg-green-50 rounded-lg">
-                      <div className="flex items-center justify-center space-x-2 mb-1">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span className="font-medium text-green-700">Cổng Vào</span>
-                      </div>
-                      <p className="text-xs text-gray-600">Nhận diện xe vào bãi</p>
-                    </div>
-                    <div className="p-3 bg-red-50 rounded-lg">
-                      <div className="flex items-center justify-center space-x-2 mb-1">
-                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                        <span className="font-medium text-red-700">Cổng Ra</span>
-                      </div>
-                      <p className="text-xs text-gray-600">Tính phí và xe ra bãi</p>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -521,6 +515,13 @@ const StaffDashboard: React.FC = () => {
                 <h3 className="text-lg font-semibold mb-4 text-gray-600">Debug Tools (Development)</h3>
                 <PaymentDebugger />
               </div>
+            </div>
+          )}
+
+          {/* Subscription Stats Tab */}
+          {activeTab === "subscriptions" && (
+            <div className="space-y-6">
+              <SubscriptionStatsPanel />
             </div>
           )}
         </div>

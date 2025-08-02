@@ -47,7 +47,18 @@ const SubscriptionSchema = new mongoose.Schema({
   },
   notes: {
     type: String,
-  }
+  },
+  usageCount: {
+    type: Number,
+    default: 0,
+  },
+  lastUsed: {
+    type: Date,
+  },
+  renewalNotified: {
+    type: Boolean,
+    default: false,
+  },
 }, {
   timestamps: true,
 });
@@ -73,6 +84,39 @@ SubscriptionSchema.methods.getRemainingDays = function() {
   const now = new Date();
   const diffTime = this.endDate - now;
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
+
+// Update usage count
+SubscriptionSchema.methods.incrementUsage = function() {
+  this.usageCount += 1;
+  this.lastUsed = new Date();
+  return this.save();
+};
+
+// Check if needs renewal notification
+SubscriptionSchema.methods.needsRenewalNotification = function() {
+  const daysLeft = this.getRemainingDays();
+  return daysLeft <= 7 && daysLeft > 0 && !this.renewalNotified;
+};
+
+// Static method to find expired subscriptions
+SubscriptionSchema.statics.findExpired = function() {
+  return this.find({
+    status: "active",
+    endDate: { $lt: new Date() }
+  });
+};
+
+// Static method to find subscriptions needing renewal notification
+SubscriptionSchema.statics.findNeedingRenewal = function() {
+  const sevenDaysFromNow = new Date();
+  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+  
+  return this.find({
+    status: "active",
+    endDate: { $lte: sevenDaysFromNow, $gt: new Date() },
+    renewalNotified: false
+  });
 };
 
 module.exports = mongoose.model("Subscription", SubscriptionSchema);

@@ -44,6 +44,26 @@ const UserSchema = new mongoose.Schema({
     trim: true,
     uppercase: true,
   }],
+  subscriptionStatus: {
+    type: String,
+    enum: ["none", "active", "expired", "cancelled"],
+    default: "none",
+  },
+  subscriptionEndDate: {
+    type: Date,
+  },
+  subscriptionType: {
+    type: String,
+    enum: ["monthly", "quarterly", "yearly"],
+  },
+  vehicleCount: {
+    type: Number,
+    default: 0,
+  },
+  maxVehicles: {
+    type: Number,
+    default: 1,
+  },
 }, {
   timestamps: true,
 });
@@ -64,6 +84,28 @@ UserSchema.pre("save", async function (next) {
 // Compare password method
 UserSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
+};
+
+// Check if user has active subscription
+UserSchema.methods.hasActiveSubscription = function() {
+  return this.subscriptionStatus === "active" && 
+         this.subscriptionEndDate && 
+         new Date() <= this.subscriptionEndDate;
+};
+
+// Update subscription status
+UserSchema.methods.updateSubscriptionStatus = function() {
+  if (this.subscriptionEndDate && new Date() > this.subscriptionEndDate) {
+    this.subscriptionStatus = "expired";
+  }
+  return this.save();
+};
+
+// Get remaining subscription days
+UserSchema.methods.getSubscriptionRemainingDays = function() {
+  if (!this.hasActiveSubscription()) return 0;
+  const diffTime = this.subscriptionEndDate - new Date();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
 module.exports = mongoose.model("User", UserSchema); 

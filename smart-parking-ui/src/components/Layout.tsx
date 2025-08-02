@@ -38,12 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({ children }) => {
           { path: "/admin/dashboard", label: "Dashboard", icon: Home },
         ];
       case "staff":
-        return [
-          { path: "/staff/dashboard", label: "Dashboard", icon: Home },
-          { path: "/staff/cameras", label: "Camera", icon: Camera },
-          { path: "/staff/barrie", label: "Barie", icon: Lock },
-          { path: "/staff/payments", label: "Thanh toán", icon: CreditCard },
-        ];
+        return []; // No sidebar navigation for staff
       case "user":
         return [
           { path: "/user/dashboard", label: "Dashboard", icon: Home },
@@ -55,6 +50,53 @@ const Sidebar: React.FC<SidebarProps> = ({ children }) => {
 
   const navItems = getNavItems();
 
+  // Staff layout - no sidebar, just top bar with logout
+  if (user?.role === "staff") {
+    return (
+      <div className="h-screen bg-gray-100">
+        {/* Top Navigation Bar for Staff */}
+        <div className="bg-white shadow-md border-b border-gray-200">
+          <div className="px-6 py-4 flex items-center justify-between">
+            {/* Logo and Title */}
+            <div className="flex items-center space-x-3">
+              <Car className="h-8 w-8 text-blue-600" />
+              <h1 className="text-xl font-bold text-gray-900">Smart Parking</h1>
+            </div>
+            
+            {/* User Info and Logout */}
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-3">
+                <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
+                  <User className="h-4 w-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{user.username}</p>
+                  <p className="text-xs text-gray-500 capitalize">{user.role}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                title="Đăng xuất"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Đăng xuất</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="h-[calc(100vh-80px)] overflow-auto">
+          <main className="p-6">
+            {children}
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  // Default layout with sidebar for admin and user
   return (
     <div className="flex h-screen bg-gray-100">
       {/* Sidebar */}

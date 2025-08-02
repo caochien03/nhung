@@ -16,6 +16,9 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
   const [selectedPlan, setSelectedPlan] = useState<"monthly" | "quarterly" | "yearly">("monthly");
   const [paymentMethod, setPaymentMethod] = useState<"balance" | "qr">("balance");
   const [purchasing, setPurchasing] = useState(false);
+  const [extending, setExtending] = useState(false);
+  const [showExtendModal, setShowExtendModal] = useState(false);
+  const [extensionType, setExtensionType] = useState<"monthly" | "quarterly" | "yearly">("monthly");
 
   useEffect(() => {
     loadData();
@@ -92,6 +95,31 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
     }
   };
 
+  const handleExtend = async () => {
+    if (!activeSubscription) return;
+    
+    try {
+      setExtending(true);
+      
+      const response = await subscriptionsAPI.extendSubscription({
+        subscriptionId: activeSubscription._id || activeSubscription.id!,
+        extensionType
+      });
+
+      if (response.success) {
+        toast.success(`Gia hạn vé tháng thành công! Thêm ${extensionType === "monthly" ? "1 tháng" : extensionType === "quarterly" ? "3 tháng" : "12 tháng"}`);
+        setShowExtendModal(false);
+        loadData();
+        onSubscriptionUpdated?.();
+      }
+    } catch (error: any) {
+      console.error("Extend error:", error);
+      toast.error(error.response?.data?.message || "Không thể gia hạn vé tháng");
+    } finally {
+      setExtending(false);
+    }
+  };
+
   const getRemainingDays = (endDate: Date | string) => {
     const end = new Date(endDate);
     const now = new Date();
@@ -154,12 +182,20 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
           </div>
 
           <div className="mt-4 flex justify-end">
-            <button
-              onClick={handleCancel}
-              className="px-4 py-2 text-red-600 hover:text-red-700 border border-red-300 hover:border-red-400 rounded-lg transition-colors"
-            >
-              Hủy vé tháng
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setShowExtendModal(true)}
+                className="px-4 py-2 text-blue-600 hover:text-blue-700 border border-blue-300 hover:border-blue-400 rounded-lg transition-colors"
+              >
+                Gia hạn
+              </button>
+              <button
+                onClick={handleCancel}
+                className="px-4 py-2 text-red-600 hover:text-red-700 border border-red-300 hover:border-red-400 rounded-lg transition-colors"
+              >
+                Hủy vé tháng
+              </button>
+            </div>
           </div>
         </div>
       ) : (
@@ -302,6 +338,83 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   {purchasing ? "Đang xử lý..." : "Xác nhận"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extend Subscription Modal */}
+      {showExtendModal && pricing && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Gia hạn vé tháng</h3>
+              <button
+                onClick={() => setShowExtendModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Chọn gói gia hạn
+                </label>
+                <div className="space-y-2">
+                  {Object.entries(pricing.features).map(([key, plan]: [string, any]) => (
+                    <label key={key} className="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="radio"
+                        value={key}
+                        checked={extensionType === key}
+                        onChange={(e) => setExtensionType(e.target.value as any)}
+                        className="mr-3"
+                      />
+                      <div className="flex-1">
+                        <div className="flex justify-between">
+                          <span className="font-medium">{plan.duration}</span>
+                          <span className="font-bold text-blue-600">
+                            {plan.price.toLocaleString()} VND
+                          </span>
+                        </div>
+                        {plan.savings > 0 && (
+                          <div className="text-sm text-green-600">
+                            Tiết kiệm {plan.savings.toLocaleString()} VND
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex justify-between">
+                  <span>Số tiền cần thanh toán:</span>
+                  <span className="font-bold text-blue-600">
+                    {pricing.features[extensionType]?.price.toLocaleString()} VND
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowExtendModal(false)}
+                  disabled={extending}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handleExtend}
+                  disabled={extending}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {extending ? "Đang xử lý..." : "Xác nhận gia hạn"}
                 </button>
               </div>
             </div>
