@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } f
 import { Camera, Play, Pause, RotateCcw, AlertCircle } from "lucide-react";
 
 interface CameraMonitorProps {
-  cameraIndex: number;
+  cameraIndex: number; // Device index để chọn webcam vật lý (0, 1, 2...)
+  logicIndex?: number; // Logic index cho ESP32/backend matching (1=VÀO, 2=RA)
   title: string;
   onPlateDetected?: (plateData: any) => void;
-  autoStart?: boolean; // Thêm prop để control auto-start
 }
 
-const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, title, onPlateDetected, autoStart = false }, ref) => {
+const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, logicIndex, title, onPlateDetected }, ref) => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [status, setStatus] = useState<"online" | "offline" | "error">("offline");
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
@@ -50,11 +50,9 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, title,
     listCameras();
   }, [cameraIndex]);
 
-  // Khởi động camera tự động nếu autoStart = true
+  // Khởi động camera tự động (giống CameraView.jsx)
   useEffect(() => {
-    if (!selectedCamera || !autoStart) {
-      return;
-    }
+    if (!selectedCamera) return;
 
     const startCamera = async () => {
       try {
@@ -70,9 +68,6 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, title,
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             deviceId: { exact: selectedCamera.deviceId },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-            frameRate: { ideal: 30 }
           },
         });
 
@@ -80,22 +75,12 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, title,
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          
-          videoRef.current.onloadedmetadata = async () => {
-            try {
-              await videoRef.current!.play();
-              setIsStreaming(true);
-              setStatus("online");
-              setLastUpdate(new Date());
-            } catch (playError) {
-              console.error("Auto-start play failed:", playError);
-              setError(`Không thể phát video: ${playError}`);
-              setStatus("error");
-            }
-          };
+          setIsStreaming(true);
+          setStatus("online");
+          setLastUpdate(new Date());
         }
       } catch (err: any) {
-        console.error("Lỗi khi tự động khởi động camera:", err);
+        console.error("Lỗi khi truy cập camera:", err);
         setError(`Không thể truy cập camera: ${selectedCamera.label || `Camera ${cameraIndex}`}`);
         setStatus("error");
         setIsStreaming(false);
@@ -109,7 +94,7 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, title,
         streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
-  }, [selectedCamera, cameraIndex, autoStart]);
+  }, [selectedCamera, cameraIndex]);
 
   const handleCameraChange = (deviceId: string) => {
     const camera = cameras.find(cam => cam.deviceId === deviceId);
@@ -134,17 +119,45 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, title,
 
   // Hàm tự động chụp ảnh khi nhận signal WebSocket
   const autoCaptureFromWS = async (uid: string, cameraIdx: number) => {
-    if (cameraIdx !== cameraIndex) return; // Chỉ xử lý nếu đúng camera
+    const targetIndex = logicIndex || cameraIndex; // Sử dụng logicIndex nếu có, nếu không dùng cameraIndex
+    console.log(`🎯 CameraMonitor[device:${cameraIndex}, logic:${logicIndex}] nhận auto capture:`, {uid, cameraIdx, targetIndex});
+    
+    if (cameraIdx !== targetIndex) {
+      console.log(`❌ Camera index không khớp: ${cameraIdx} !== ${targetIndex}`);
+      return; // Chỉ xử lý nếu đúng camera
+    }
 
+    if (!videoRef.current) {
+      console.log("❌ Video ref không tồn tại");
+      return;
+    }
+    
+    if (!canvasRef.current) {
+      console.log("❌ Canvas ref không tồn tại");  
+      return;
+    }
+    
+    if (!isStreaming) {
+      console.log("❌ Camera chưa streaming");
+      return;
+    }
+
+    console.log("✅ Bắt đầu auto capture...");
+    
     if (videoRef.current && canvasRef.current) {
       const canvas = canvasRef.current;
       const context = canvas.getContext("2d");
-      if (!context) return;
+      if (!context) {
+        console.log("❌ Không lấy được canvas context");
+        return;
+      }
 
       canvas.width = videoRef.current.videoWidth;
       canvas.height = videoRef.current.videoHeight;
       context.drawImage(videoRef.current, 0, 0);
       const imageData = canvas.toDataURL("image/jpeg");
+      
+      console.log("📸 Ảnh đã capture, gửi lên backend...");
       
       setIsLoading(true);
       try {
@@ -255,7 +268,9 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, title,
         body: JSON.stringify({ image: imageData }),
       });
       const result = await response.json();
-      const detectedPlate = result.licensePlate || "Không nhận diện được";
+      
+      // Backend trả về: { success: true, data: { licensePlate: "..." } }
+      const detectedPlate = result.data?.licensePlate || result.licensePlate || "Không nhận diện được";
       setLicensePlate(detectedPlate);
       setLastUpdate(new Date());
       
@@ -316,9 +331,6 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, title,
           const stream = await navigator.mediaDevices.getUserMedia({
             video: {
               deviceId: cameraToUse.deviceId ? { exact: cameraToUse.deviceId } : undefined,
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-              frameRate: { ideal: 30 }
             },
           });
           
@@ -326,20 +338,9 @@ const CameraMonitor = forwardRef<any, CameraMonitorProps>(({ cameraIndex, title,
           
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
-            
-            // Đợi video load metadata trước khi play
-            videoRef.current.onloadedmetadata = async () => {
-              try {
-                await videoRef.current!.play();
-                setIsStreaming(true);
-                setStatus("online");
-                setLastUpdate(new Date());
-              } catch (playError) {
-                console.error("Video play() failed:", playError);
-                setError(`Không thể phát video: ${playError}`);
-                setStatus("error");
-              }
-            };
+            setIsStreaming(true);
+            setStatus("online");
+            setLastUpdate(new Date());
           } else {
             throw new Error("Video element not available");
           }

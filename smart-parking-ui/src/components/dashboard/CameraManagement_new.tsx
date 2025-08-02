@@ -1,36 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Camera, AlertCircle, RefreshCw } from "lucide-react";
+import { useCamera } from "../../hooks/useCamera";
 import CameraMonitor from "./CameraMonitor";
 
 const CameraManagement: React.FC = () => {
-  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { cameras, loading, error, enumerateCameras } = useCamera();
   const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    enumerateCameras();
-  }, []);
-
-  const enumerateCameras = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Yêu cầu quyền truy cập để có thể lấy label của device
-      await navigator.mediaDevices.getUserMedia({ video: true });
-
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
-
-      setCameras(videoDevices);
-    } catch (err: any) {
-      console.error('Error enumerating cameras:', err);
-      setError(err.message || 'Không thể truy cập camera');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -82,7 +57,7 @@ const CameraManagement: React.FC = () => {
                 <div className="flex items-center space-x-3">
                   <Camera className="h-5 w-5 text-green-600" />
                   <div>
-                    <h4 className="font-medium text-gray-900">{camera.label || `Camera ${index + 1}`}</h4>
+                    <h4 className="font-medium text-gray-900">{camera.label}</h4>
                     <p className="text-sm text-gray-600">Camera {index + 1}</p>
                   </div>
                 </div>
@@ -98,7 +73,7 @@ const CameraManagement: React.FC = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Group ID:</span>
-                  <span className="font-mono text-xs">{camera.groupId?.slice(0, 16) || 'N/A'}...</span>
+                  <span className="font-mono text-xs">{camera.groupId.slice(0, 16)}...</span>
                 </div>
               </div>
             </div>
@@ -125,7 +100,7 @@ const CameraManagement: React.FC = () => {
               <CameraMonitor
                 key={camera.deviceId}
                 cameraIndex={index}
-                title={`${camera.label || `Camera ${index + 1}`}`}
+                title={`${camera.label} (Camera ${index + 1})`}
               />
             ))}
           </div>

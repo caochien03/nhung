@@ -45,7 +45,8 @@ class WebSocketService {
 
       this.ws.onmessage = (event) => {
         try {
-          const message: WebSocketMessage = JSON.parse(event.data);
+          const message = JSON.parse(event.data);
+          console.log("WebSocket message received:", message);
           this.handleMessage(message);
         } catch (error) {
           console.error("Error parsing WebSocket message:", error);
@@ -78,11 +79,12 @@ class WebSocketService {
     }
   }
 
-  private handleMessage(message: WebSocketMessage) {
+  private handleMessage(message: any) {
     const listeners = this.listeners.get(message.type) || [];
     listeners.forEach(listener => {
       try {
-        listener(message.data);
+        // Truyền toàn bộ message, không chỉ message.data
+        listener(message);
       } catch (error) {
         console.error("Error in WebSocket listener:", error);
       }

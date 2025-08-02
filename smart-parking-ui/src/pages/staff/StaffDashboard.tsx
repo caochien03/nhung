@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Car, DollarSign, Users, Clock, Camera, Lock } from "lucide-react";
 import DashboardOverview from "../../components/dashboard/DashboardOverview";
 import CameraMonitor from "../../components/dashboard/CameraMonitor";
@@ -22,10 +22,23 @@ const StaffDashboard: React.FC = () => {
   const [selectedParking, setSelectedParking] = useState<ParkingRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"overview" | "cameras" | "barrie" | "payments">("overview");
+  
+  // Camera refs để gọi auto capture
+  const camera1Ref = useRef<any>(null);
+  const camera2Ref = useRef<any>(null);
 
   useEffect(() => {
     loadDashboardData();
     setupWebSocket();
+    
+    // Kết nối WebSocket với debug
+    console.log("Đang kết nối WebSocket...");
+    wsService.connect("ws://localhost:8080");
+    
+    // Test WebSocket connection sau 2 giây
+    setTimeout(() => {
+      console.log("Test WebSocket listeners:", wsService);
+    }, 2000);
   }, []);
 
   const loadDashboardData = async () => {
@@ -56,6 +69,8 @@ const StaffDashboard: React.FC = () => {
   };
 
   const setupWebSocket = () => {
+    console.log("Setting up WebSocket listeners...");
+    
     // Listen for new parking records
     wsService.subscribe("new_parking", (data: ParkingRecord) => {
       const processedData = {
@@ -87,6 +102,40 @@ const StaffDashboard: React.FC = () => {
         todayRevenue: prev.todayRevenue + data.amount,
       }));
     });
+
+    // Listen for auto capture requests from ESP32
+    wsService.subscribe("auto_capture", (message: any) => {
+      console.log("🎯 Nhận WebSocket auto_capture:", message);
+      const { uid, cameraIndex } = message;
+      
+      console.log("📹 Camera refs status:", {
+        camera1Available: !!camera1Ref.current,
+        camera2Available: !!camera2Ref.current,
+        requestedCamera: cameraIndex
+      });
+      
+      // ESP32 mapping: RFID #1 → cameraIndex=1 (VÀO), RFID #2 → cameraIndex=2 (RA)
+      // Backend logic: cameraIndex=1 (VÀO), cameraIndex=2 (RA)
+      // Frontend logic: Camera 1 = VÀO, Camera 2 = RA
+      
+      // Gọi auto capture từ camera tương ứng
+      if (cameraIndex === 1 && camera1Ref.current) {
+        console.log("✅ ESP32 RFID #1 (VÀO) → Camera 1 auto capture với UID:", uid);
+        camera1Ref.current.autoCaptureFromWS(uid, 1);
+      } else if (cameraIndex === 2 && camera2Ref.current) {
+        console.log("✅ ESP32 RFID #2 (RA) → Camera 2 auto capture với UID:", uid);
+        camera2Ref.current.autoCaptureFromWS(uid, 2);
+      } else {
+        console.log("❌ Camera ref không tồn tại hoặc cameraIndex không hợp lệ:", { 
+          cameraIndex, 
+          camera1Ref: !!camera1Ref.current, 
+          camera2Ref: !!camera2Ref.current,
+          activeTab 
+        });
+      }
+    });
+    
+    console.log("✅ WebSocket listeners đã được setup");
   };
 
   const handlePaymentComplete = (payment: any) => {
@@ -187,9 +236,55 @@ const StaffDashboard: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Camera Monitoring */}
               <div className="lg:col-span-2 space-y-6">
+                {/* Camera Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <CameraMonitor cameraIndex={0} title="XWF-1080P (Camera thứ 1) - Webcam USB 1080P" autoStart={true} />
-                  <CameraMonitor cameraIndex={1} title="XWF-1080P (Camera thứ 2) - Webcam USB 1080P khác" autoStart={true} />
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                      <h4 className="font-medium text-green-700">CỔNG VÀO</h4>
+                      <span className="text-sm text-gray-500">RFID 1 | Camera #1</span>
+                    </div>
+                    <CameraMonitor 
+                      ref={camera1Ref}
+                      cameraIndex={0} 
+                      logicIndex={1}
+                      title="Camera Cổng Vào" 
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                      <h4 className="font-medium text-red-700">CỔNG RA</h4>
+                      <span className="text-sm text-gray-500">RFID 2 | Camera #2</span>
+                    </div>
+                    <CameraMonitor 
+                      ref={camera2Ref}
+                      cameraIndex={1} 
+                      logicIndex={2}
+                      title="Camera Cổng Ra" 
+                    />
+                  </div>
+                </div>
+
+                {/* Camera Status Summary */}
+                <div className="bg-white rounded-lg shadow-md p-4">
+                  <div className="grid grid-cols-2 gap-4 text-center">
+                    <div className="p-3 bg-green-50 rounded-lg">
+                      <div className="flex items-center justify-center space-x-2 mb-1">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="font-medium text-green-700">Cổng Vào</span>
+                      </div>
+                      <p className="text-xs text-gray-600">Nhận diện xe vào bãi</p>
+                    </div>
+                    <div className="p-3 bg-red-50 rounded-lg">
+                      <div className="flex items-center justify-center space-x-2 mb-1">
+                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                        <span className="font-medium text-red-700">Cổng Ra</span>
+                      </div>
+                      <p className="text-xs text-gray-600">Tính phí và xe ra bãi</p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
