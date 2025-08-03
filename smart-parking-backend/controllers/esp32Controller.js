@@ -362,6 +362,29 @@ exports.autoCapture = async (req, res) => {
 
             await newRecord.save();
 
+            // Gửi WebSocket notification cho dashboard
+            const entryNotification = {
+                type: "vehicle_entry",
+                message: paymentType === "subscription" 
+                    ? "✅ Xe vào thành công!" 
+                    : "📝 Xe vào - Chờ xác nhận thanh toán",
+                licensePlate: licensePlate,
+                paymentType: paymentType,
+                subscriptionUsed: paymentType === "subscription",
+                gateStatus: paymentType === "subscription" ? "✅ Cổng mở tự động" : "⏳ Chờ xử lý",
+                timestamp: new Date(),
+                uid: uid,
+                details: paymentType === "subscription" 
+                    ? `Biển số: ${licensePlate}\nVé tháng: SỬ DỤNG\nCổng mở tự động: ✅`
+                    : `Biển số: ${licensePlate}\nLoại vé: Vé lượt\nTrạng thái: Chờ xác nhận`
+            };
+
+            wsClients.forEach((ws) => {
+                if (ws.readyState === 1) {
+                    ws.send(JSON.stringify(entryNotification));
+                }
+            });
+
             res.json({
                 message: "Vehicle entered - Record created",
                 action: "IN",
@@ -515,7 +538,7 @@ exports.autoCapture = async (req, res) => {
                 }
 
                 res.json({
-                    message: hasSubscription ? "Vehicle exited - Subscription used" : "Vehicle exited - Payment required",
+                    message: hasSubscription ? "🎫 Xe ra thành công - Sử dụng vé tháng" : "Vehicle exited - Payment required",
                     action: hasSubscription ? "OUT_SUBSCRIPTION" : "OUT_PAYMENT_REQUIRED",
                     uid: uid,
                     licensePlate: exitPlate || entryPlate, // Hiển thị biển số
@@ -536,8 +559,8 @@ exports.autoCapture = async (req, res) => {
                     parkingDurationMs: parkingDurationMs,
                     parkingHours: `${feeInfo.parkingHours} giờ`,
                     billingHours: feeInfo.feeType,
-                    originalFee: `${feeInfo.originalFee.toLocaleString()} VND`,
-                    fee: feeInfo.fee > 0 ? `${feeInfo.fee.toLocaleString()} VND` : "MIỄN PHÍ (Vé tháng)",
+                    originalFee: hasSubscription ? "0 VND" : `${feeInfo.originalFee.toLocaleString()} VND`,
+                    fee: hasSubscription ? "🎫 MIỄN PHÍ - Vé tháng" : `${feeInfo.fee.toLocaleString()} VND`,
                     feeNumber: feeInfo.fee,
                     paymentType: existingRecord.paymentType,
                     subscriptionUsed: existingRecord.paymentType === "subscription",
@@ -545,6 +568,7 @@ exports.autoCapture = async (req, res) => {
                     paymentStatus: existingRecord.paymentStatus,
                     requiresStaffConfirmation: !hasSubscription, // Cần xác nhận nhân viên
                     parkingRecordId: existingRecord._id, // ID để xác nhận thanh toán
+                    subscriptionInfo: hasSubscription ? "✅ Vé tháng đã được sử dụng - Chúc quý khách đi đường bình an!" : null,
                     entryInfo: `${entryPlate} - ${timeIn.toLocaleTimeString(
                         "vi-VN",
                         { hour12: false }
@@ -554,6 +578,31 @@ exports.autoCapture = async (req, res) => {
                         { hour12: false }
                     )}`,
                     timestamp: new Date(),
+                });
+
+                // Gửi WebSocket notification cho dashboard về xe ra
+                const exitNotification = {
+                    type: "vehicle_exit",
+                    message: hasSubscription 
+                        ? "✅ Xe ra thành công!" 
+                        : "💰 Xe ra - Cần thanh toán",
+                    licensePlate: exitPlate || entryPlate,
+                    paymentType: existingRecord.paymentType,
+                    subscriptionUsed: hasSubscription,
+                    fee: hasSubscription ? "MIỄN PHÍ" : `${feeInfo.fee.toLocaleString()} VND`,
+                    duration: durationDisplay,
+                    gateStatus: "✅ Đã ra",
+                    timestamp: new Date(),
+                    uid: uid,
+                    details: hasSubscription 
+                        ? `Biển số: ${exitPlate || entryPlate}\nVé tháng: SỬ DỤNG\nThời gian đỗ: ${durationDisplay}\nPhí: MIỄN PHÍ\nTrạng thái: ✅ Đã ra thành công`
+                        : `Biển số: ${exitPlate || entryPlate}\nVé lượt: THANH TOÁN\nThời gian đỗ: ${durationDisplay}\nPhí: ${feeInfo.fee.toLocaleString()} VND\nTrạng thái: 💰 Cần thanh toán`
+                };
+
+                wsClients.forEach((ws) => {
+                    if (ws.readyState === 1) {
+                        ws.send(JSON.stringify(exitNotification));
+                    }
                 });
             } else {
                 // Không tìm thấy record vào - có thể là lỗi hoặc xe chưa vào

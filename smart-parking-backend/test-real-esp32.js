@@ -23,6 +23,12 @@ const testRealESP32Flow = async () => {
         if (data.fee !== undefined) {
           console.log(`💰 Fee: ${data.fee}`);
         }
+        if (data.subscriptionInfo) {
+          console.log(`🎫 ${data.subscriptionInfo}`);
+        }
+        if (data.parkingDuration) {
+          console.log(`⏱️  Duration: ${data.parkingDuration}`);
+        }
         console.log('─'.repeat(40));
       }
     });
