@@ -10,12 +10,26 @@ router.post("/uid", esp32Controller.receiveUID);
 router.post("/auto-capture", esp32Controller.autoCapture);
 
 // Kiểm tra vé tháng và mở cổng
-router.post("/check-subscription", esp32Controller.checkSubscriptionAndOpenGate);
+router.post(
+    "/check-subscription",
+    esp32Controller.checkSubscriptionAndOpenGate
+);
 
 // Kiểm tra vé tháng cho cổng vào (test endpoint)
-router.post("/check-subscription-gate", esp32Controller.checkSubscriptionAndOpenGate);
+router.post(
+    "/check-subscription-gate",
+    esp32Controller.checkSubscriptionAndOpenGate
+);
 
 // Nhân viên xác nhận thanh toán và mở cổng (cần auth)
-router.post("/confirm-payment", authenticateToken, authorizeRole("admin", "staff"), esp32Controller.confirmPayment);
+router.post(
+    "/confirm-payment",
+    authenticateToken,
+    authorizeRole("admin", "staff"),
+    esp32Controller.confirmPayment
+);
+
+// ESP32 check có lệnh mở cổng không (không cần auth)
+router.get("/check-gate-command/:uid", esp32Controller.checkGateCommand);
 
 module.exports = router;

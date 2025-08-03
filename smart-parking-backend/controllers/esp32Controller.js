@@ -51,12 +51,26 @@ exports.setWsClients = (clients) => {
 const processingCache = new Map(); // uid -> { timestamp, processing: boolean }
 const PROCESSING_TIMEOUT = 5000; // 5 giây
 
+// Gate commands cache - lưu lệnh mở cổng cho ESP32
+const gateCommands = new Map(); // uid -> { shouldOpen: boolean, reason: string, timestamp: number }
+const GATE_COMMAND_TIMEOUT = 60000; // Commands expire after 60 seconds
+
 // Cleanup old cache entries
 setInterval(() => {
     const now = Date.now();
+
+    // Cleanup processing cache
     for (const [uid, data] of processingCache.entries()) {
         if (now - data.timestamp > PROCESSING_TIMEOUT) {
             processingCache.delete(uid);
+        }
+    }
+
+    // Cleanup gate commands
+    for (const [uid, command] of gateCommands.entries()) {
+        if (now - command.timestamp > GATE_COMMAND_TIMEOUT) {
+            gateCommands.delete(uid);
+            console.log(`🧹 Cleaned up expired gate command for UID: ${uid}`);
         }
     }
 }, 30000); // Cleanup mỗi 30 giây
@@ -66,7 +80,9 @@ exports.checkSubscriptionAndOpenGate = async (req, res) => {
     try {
         const { licensePlate, cameraIndex } = req.body;
 
-        console.log(`Kiểm tra vé tháng - Biển số: ${licensePlate}, Camera: ${cameraIndex}`);
+        console.log(
+            `Kiểm tra vé tháng - Biển số: ${licensePlate}, Camera: ${cameraIndex}`
+        );
 
         if (!licensePlate) {
             return res.status(400).json({
@@ -79,19 +95,31 @@ exports.checkSubscriptionAndOpenGate = async (req, res) => {
         // Tìm xe đã đăng ký với fuzzy matching
         let vehicle = await Vehicle.findOne({
             licensePlate: licensePlate.toUpperCase(),
-            isActive: true
+            isActive: true,
         }).populate("userId");
 
         // Nếu không tìm thấy exact match, thử fuzzy matching
         if (!vehicle) {
-            const allVehicles = await Vehicle.find({ isActive: true }).populate("userId");
-            const registeredPlates = allVehicles.map(v => v.licensePlate);
-            
-            const bestMatch = findBestMatch(licensePlate, registeredPlates, 0.75);
-            
+            const allVehicles = await Vehicle.find({ isActive: true }).populate(
+                "userId"
+            );
+            const registeredPlates = allVehicles.map((v) => v.licensePlate);
+
+            const bestMatch = findBestMatch(
+                licensePlate,
+                registeredPlates,
+                0.75
+            );
+
             if (bestMatch && bestMatch.isMatch) {
-                vehicle = allVehicles.find(v => v.licensePlate === bestMatch.registeredPlate);
-                console.log(`🔍 Fuzzy match found: OCR "${licensePlate}" → Registered "${bestMatch.registeredPlate}" (score: ${bestMatch.score.toFixed(3)})`);
+                vehicle = allVehicles.find(
+                    (v) => v.licensePlate === bestMatch.registeredPlate
+                );
+                console.log(
+                    `🔍 Fuzzy match found: OCR "${licensePlate}" → Registered "${
+                        bestMatch.registeredPlate
+                    }" (score: ${bestMatch.score.toFixed(3)})`
+                );
             }
         }
 
@@ -105,10 +133,11 @@ exports.checkSubscriptionAndOpenGate = async (req, res) => {
         }
 
         // Kiểm tra vé tháng
-        const subscriptionCheck = await subscriptionController.checkSubscriptionForParking(
-            vehicle.userId._id, 
-            licensePlate
-        );
+        const subscriptionCheck =
+            await subscriptionController.checkSubscriptionForParking(
+                vehicle.userId._id,
+                licensePlate
+            );
 
         if (!subscriptionCheck.hasSubscription || !subscriptionCheck.canUse) {
             return res.json({
@@ -146,14 +175,13 @@ exports.checkSubscriptionAndOpenGate = async (req, res) => {
             cameraIndex: cameraIndex,
             timestamp: new Date(),
         });
-
     } catch (err) {
         console.error("Lỗi khi kiểm tra vé tháng:", err);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
             message: "Internal server error",
             canOpen: false,
-            error: err.message 
+            error: err.message,
         });
     }
 };
@@ -161,24 +189,27 @@ exports.checkSubscriptionAndOpenGate = async (req, res) => {
 exports.receiveUID = async (req, res) => {
     try {
         const { uid, cameraIndex } = req.body;
-        
-        console.log(`🎯 ESP32 RFID received - UID: ${uid}, Camera: ${cameraIndex}`);
 
-        // **KIỂM TRA CAPACITY BÃI ĐỖ XE**
-        const MAX_PARKING_CAPACITY = 4; // Giới hạn 4 vị trí
-        
-        if (cameraIndex === 1) { // Cổng vào
-            const currentActiveParkings = await ParkingRecord.countDocuments({ 
+        console.log(
+            `🎯 ESP32 RFID received - UID: ${uid}, Camera: ${cameraIndex}`
+        );
+
+        if (cameraIndex === 1) {
+            // 🟢 CỔNG VÀO: Kiểm tra capacity
+            const MAX_PARKING_CAPACITY = 4;
+            const currentActiveParkings = await ParkingRecord.countDocuments({
                 status: "active",
-                timeOut: { $exists: false }
+                timeOut: { $exists: false },
             });
-            
-            console.log(`🅿️ Parking status: ${currentActiveParkings}/${MAX_PARKING_CAPACITY} slots occupied`);
-            
+
+            console.log(
+                `🅿️ Parking status: ${currentActiveParkings}/${MAX_PARKING_CAPACITY} slots occupied`
+            );
+
             if (currentActiveParkings >= MAX_PARKING_CAPACITY) {
-                console.log(`🚨 PARKING FULL! Cannot allow entry. Current: ${currentActiveParkings}/${MAX_PARKING_CAPACITY}`);
-                
-                // Gửi WebSocket notification về bãi đầy
+                console.log(`🚨 PARKING FULL! Cannot allow entry.`);
+
+                // WebSocket notification về bãi đầy
                 const fullMessage = {
                     type: "parking_full",
                     message: "Bãi đỗ xe đã đầy!",
@@ -186,56 +217,173 @@ exports.receiveUID = async (req, res) => {
                     maxCapacity: MAX_PARKING_CAPACITY,
                     uid: uid,
                     cameraIndex: cameraIndex,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
                 };
 
-                wsClients.forEach(client => {
+                wsClients.forEach((client) => {
                     if (client.readyState === client.OPEN) {
                         client.send(JSON.stringify(fullMessage));
                     }
                 });
 
                 return res.json({
-                    message: `🚨 BÃI ĐỖ XE ĐÃ ĐẦY! (${currentActiveParkings}/${MAX_PARKING_CAPACITY})`,
-                    action: "DENY_ENTRY_FULL_CAPACITY",
+                    message: "access_denied",
+                    status: "denied",
+                    displayText: "Parking Full",
+                    subText: "No spaces left",
                     uid: uid,
                     cameraIndex: cameraIndex,
                     currentCapacity: currentActiveParkings,
                     maxCapacity: MAX_PARKING_CAPACITY,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                });
+            }
+
+            // Còn chỗ → Cho vào
+            console.log(
+                `✅ Entry allowed - ${currentActiveParkings}/${MAX_PARKING_CAPACITY} slots`
+            );
+
+            // Trigger camera cho logging
+            const autoCaptureMessage = {
+                type: "auto_capture",
+                uid: uid,
+                cameraIndex: cameraIndex,
+                timestamp: new Date().toISOString(),
+            };
+
+            wsClients.forEach((client) => {
+                if (client.readyState === client.OPEN) {
+                    client.send(JSON.stringify(autoCaptureMessage));
+                }
+            });
+
+            return res.json({
+                message: "access_granted",
+                status: "granted",
+                displayText: "Welcome",
+                subText: "Drive in",
+                uid: uid,
+                cameraIndex: cameraIndex,
+                action: "AUTO_CAPTURE",
+                timestamp: new Date().toISOString(),
+            });
+        } else if (cameraIndex === 2) {
+            // 🔴 CỔNG RA: Kiểm tra payment type
+            console.log(
+                `🔴 Exit gate - Checking parking record for UID: ${uid}`
+            );
+
+            // Tìm parking record của UID này
+            const parkingRecord = await ParkingRecord.findOne({
+                rfid: uid,
+                timeOut: { $exists: false }, // Chưa ra
+                status: "active",
+            }).sort({ timeIn: -1 }); // Lấy record mới nhất
+
+            if (!parkingRecord) {
+                console.log(`❌ No parking record found for UID: ${uid}`);
+                return res.json({
+                    message: "access_denied",
+                    status: "denied",
+                    displayText: "Error",
+                    subText: "No entry record",
+                    uid: uid,
+                    cameraIndex: cameraIndex,
+                    timestamp: new Date().toISOString(),
+                });
+            }
+
+            console.log(
+                `📋 Found parking record: PaymentType=${parkingRecord.paymentType}`
+            );
+
+            if (parkingRecord.paymentType === "subscription") {
+                // VÉ THÁNG → Cho ra ngay
+                console.log(`✅ Monthly pass - Free exit allowed`);
+
+                // Trigger camera cho logging
+                const autoCaptureMessage = {
+                    type: "auto_capture",
+                    uid: uid,
+                    cameraIndex: cameraIndex,
+                    timestamp: new Date().toISOString(),
+                };
+
+                wsClients.forEach((client) => {
+                    if (client.readyState === client.OPEN) {
+                        client.send(JSON.stringify(autoCaptureMessage));
+                    }
+                });
+
+                return res.json({
+                    message: "access_granted",
+                    status: "granted",
+                    displayText: "Monthly Pass",
+                    subText: "Free exit",
+                    uid: uid,
+                    cameraIndex: cameraIndex,
+                    paymentType: "subscription",
+                    action: "AUTO_CAPTURE",
+                    timestamp: new Date().toISOString(),
+                });
+            } else {
+                // VÉ LƯỢT → KHÔNG cho ra, chờ thanh toán
+                console.log(
+                    `⏳ Hourly ticket - Payment required, blocking exit`
+                );
+
+                // Vẫn trigger camera để tính toán phí
+                const autoCaptureMessage = {
+                    type: "auto_capture",
+                    uid: uid,
+                    cameraIndex: cameraIndex,
+                    timestamp: new Date().toISOString(),
+                };
+
+                wsClients.forEach((client) => {
+                    if (client.readyState === client.OPEN) {
+                        client.send(JSON.stringify(autoCaptureMessage));
+                    }
+                });
+
+                return res.json({
+                    message: "access_denied",
+                    status: "pending_payment",
+                    displayText: "Payment Required",
+                    subText: "Please wait",
+                    uid: uid,
+                    cameraIndex: cameraIndex,
+                    paymentType: "hourly",
+                    parkingRecordId: parkingRecord._id,
+                    action: "AUTO_CAPTURE",
+                    timestamp: new Date().toISOString(),
                 });
             }
         }
 
-        // Tiếp tục logic bình thường nếu còn chỗ trống
-        // Gọi WebSocket để trigger auto capture
-        const autoCaptureMessage = {
-            type: "auto_capture",
+        // Fallback cho camera khác
+        console.log(`⚠️ Unknown camera index: ${cameraIndex}`);
+        return res.json({
+            message: "access_denied",
+            status: "denied",
+            displayText: "System Error",
+            subText: "Invalid camera",
             uid: uid,
             cameraIndex: cameraIndex,
-            timestamp: new Date().toISOString()
-        };
-
-        wsClients.forEach(client => {
-            if (client.readyState === client.OPEN) {
-                client.send(JSON.stringify(autoCaptureMessage));
-            }
+            timestamp: new Date().toISOString(),
         });
-
-        res.json({
-            message: "UID received successfully",
-            uid: uid,
-            cameraIndex: cameraIndex,
-            action: "AUTO_CAPTURE",
-            timestamp: new Date().toISOString()
-        });
-
     } catch (error) {
         console.error("ESP32 UID receive error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Internal server error",
-            error: error.message
+        res.json({
+            message: "access_denied",
+            status: "denied",
+            displayText: "System Error",
+            subText: "Try again",
+            uid: req.body.uid,
+            cameraIndex: req.body.cameraIndex,
+            error: error.message,
+            timestamp: new Date().toISOString(),
         });
     }
 };
@@ -249,13 +397,19 @@ exports.autoCapture = async (req, res) => {
         // Kiểm tra cache để tránh duplicate processing
         const cacheKey = `${uid}-${cameraIndex}`;
         const now = Date.now();
-        
+
         if (processingCache.has(cacheKey)) {
             const cached = processingCache.get(cacheKey);
-            if (cached.processing || (now - cached.timestamp) < PROCESSING_TIMEOUT) {
-                console.log(`⏳ Đang xử lý hoặc đã xử lý gần đây - UID: ${uid}, Camera: ${cameraIndex}`);
+            if (
+                cached.processing ||
+                now - cached.timestamp < PROCESSING_TIMEOUT
+            ) {
+                console.log(
+                    `⏳ Đang xử lý hoặc đã xử lý gần đây - UID: ${uid}, Camera: ${cameraIndex}`
+                );
                 return res.json({
-                    message: "Request ignored - already processing or recently processed",
+                    message:
+                        "Request ignored - already processing or recently processed",
                     action: "IGNORED",
                     uid: uid,
                     cameraIndex: cameraIndex,
@@ -270,23 +424,25 @@ exports.autoCapture = async (req, res) => {
         // Nhận diện biển số từ ảnh hoặc lấy từ request body
         let licensePlate = req.body.licensePlate || "";
         let uploadedImageData = null;
-        
+
         if (imageData) {
             // Upload ảnh lên Cloudinary trước khi nhận diện
             try {
-                const action = cameraIndex === 1 ? 'in' : 'out';
+                const action = cameraIndex === 1 ? "in" : "out";
                 uploadedImageData = await uploadBase64Image(
-                    imageData, 
-                    'unknown', // Sẽ update lại sau khi nhận diện
-                    action, 
+                    imageData,
+                    "unknown", // Sẽ update lại sau khi nhận diện
+                    action,
                     cameraIndex
                 );
-                console.log(`📸 Image uploaded to Cloudinary: ${uploadedImageData.url}`);
+                console.log(
+                    `📸 Image uploaded to Cloudinary: ${uploadedImageData.url}`
+                );
             } catch (uploadError) {
-                console.error('Error uploading image:', uploadError);
+                console.error("Error uploading image:", uploadError);
                 // Tiếp tục xử lý mà không có ảnh
             }
-            
+
             // Nhận diện biển số từ ảnh (ghi đè licensePlate nếu có ảnh)
             const recognizedPlate = await recognizePlate(imageData);
             if (recognizedPlate) {
@@ -296,46 +452,61 @@ exports.autoCapture = async (req, res) => {
 
         if (cameraIndex === 1) {
             // CAMERA VÀO - Tạo record mới
-            
+
             // Tìm user dựa trên biển số
             let userId = null;
             let paymentType = "hourly";
             let subscriptionId = null;
-            
+
             if (licensePlate) {
                 let vehicle = await Vehicle.findOne({
                     licensePlate: licensePlate.toUpperCase(),
-                    isActive: true
+                    isActive: true,
                 }).populate("userId");
 
                 // Nếu không tìm thấy exact match, thử fuzzy matching
                 if (!vehicle) {
-                    const allVehicles = await Vehicle.find({ isActive: true }).populate("userId");
-                    const registeredPlates = allVehicles.map(v => v.licensePlate);
-                    
-                    const bestMatch = findBestMatch(licensePlate, registeredPlates, 0.75);
-                    
+                    const allVehicles = await Vehicle.find({
+                        isActive: true,
+                    }).populate("userId");
+                    const registeredPlates = allVehicles.map(
+                        (v) => v.licensePlate
+                    );
+
+                    const bestMatch = findBestMatch(
+                        licensePlate,
+                        registeredPlates,
+                        0.75
+                    );
+
                     if (bestMatch && bestMatch.isMatch) {
-                        vehicle = allVehicles.find(v => v.licensePlate === bestMatch.registeredPlate);
-                        console.log(`🔍 Fuzzy match: "${licensePlate}" → "${bestMatch.registeredPlate}"`);
+                        vehicle = allVehicles.find(
+                            (v) => v.licensePlate === bestMatch.registeredPlate
+                        );
+                        console.log(
+                            `🔍 Fuzzy match: "${licensePlate}" → "${bestMatch.registeredPlate}"`
+                        );
                     }
                 }
 
                 if (vehicle && vehicle.userId) {
                     userId = vehicle.userId._id;
-                    
+
                     // Kiểm tra vé tháng với logic cải tiến
-                    const subscriptionCheck = await subscriptionController.checkSubscriptionForParking(
-                        userId, 
-                        licensePlate
-                    );
-                    
+                    const subscriptionCheck =
+                        await subscriptionController.checkSubscriptionForParking(
+                            userId,
+                            licensePlate
+                        );
+
                     if (subscriptionCheck.hasSubscription) {
                         paymentType = "subscription";
                         subscriptionId = subscriptionCheck.subscription._id;
-                        
+
                         // Log thông tin sử dụng vé tháng
-                        console.log(`✅ Subscription used - User: ${vehicle.userId.username}, Vehicle: ${licensePlate}, Days left: ${subscriptionCheck.remainingDays}`);
+                        console.log(
+                            `✅ Subscription used - User: ${vehicle.userId.username}, Vehicle: ${licensePlate}, Days left: ${subscriptionCheck.remainingDays}`
+                        );
                     }
                 }
             }
@@ -349,8 +520,10 @@ exports.autoCapture = async (req, res) => {
                 status: "active", // Đảm bảo set status active
                 paymentType: paymentType,
                 subscriptionId: subscriptionId,
-                paymentMethod: paymentType === "subscription" ? "subscription" : undefined,
-                paymentStatus: paymentType === "subscription" ? "paid" : "pending",
+                paymentMethod:
+                    paymentType === "subscription" ? "subscription" : undefined,
+                paymentStatus:
+                    paymentType === "subscription" ? "paid" : "pending",
             };
 
             // Thêm ảnh vào nếu có
@@ -365,18 +538,23 @@ exports.autoCapture = async (req, res) => {
             // Gửi WebSocket notification cho dashboard
             const entryNotification = {
                 type: "vehicle_entry",
-                message: paymentType === "subscription" 
-                    ? "✅ Xe vào thành công!" 
-                    : "📝 Xe vào - Chờ xác nhận thanh toán",
+                message:
+                    paymentType === "subscription"
+                        ? "✅ Xe vào thành công!"
+                        : "📝 Xe vào - Chờ xác nhận thanh toán",
                 licensePlate: licensePlate,
                 paymentType: paymentType,
                 subscriptionUsed: paymentType === "subscription",
-                gateStatus: paymentType === "subscription" ? "✅ Cổng mở tự động" : "⏳ Chờ xử lý",
+                gateStatus:
+                    paymentType === "subscription"
+                        ? "✅ Cổng mở tự động"
+                        : "⏳ Chờ xử lý",
                 timestamp: new Date(),
                 uid: uid,
-                details: paymentType === "subscription" 
-                    ? `Biển số: ${licensePlate}\nVé tháng: SỬ DỤNG\nCổng mở tự động: ✅`
-                    : `Biển số: ${licensePlate}\nLoại vé: Vé lượt\nTrạng thái: Chờ xác nhận`
+                details:
+                    paymentType === "subscription"
+                        ? `Biển số: ${licensePlate}\nVé tháng: SỬ DỤNG\nCổng mở tự động: ✅`
+                        : `Biển số: ${licensePlate}\nLoại vé: Vé lượt\nTrạng thái: Chờ xác nhận`,
             };
 
             wsClients.forEach((ws) => {
@@ -414,19 +592,30 @@ exports.autoCapture = async (req, res) => {
 
                 if (entryPlate && exitPlate) {
                     // Sử dụng fuzzy matching để kiểm tra
-                    const matchResult = findBestMatch(exitPlate, [entryPlate], 0.7);
+                    const matchResult = findBestMatch(
+                        exitPlate,
+                        [entryPlate],
+                        0.7
+                    );
                     if (matchResult && matchResult.isMatch) {
                         isPlateMatch = true;
                         matchScore = matchResult.score;
-                        console.log(`🔍 Exit plate match: "${exitPlate}" → "${entryPlate}" (score: ${matchScore.toFixed(3)})`);
+                        console.log(
+                            `🔍 Exit plate match: "${exitPlate}" → "${entryPlate}" (score: ${matchScore.toFixed(
+                                3
+                            )})`
+                        );
                     } else {
                         // Fallback to old similarity calculation
                         const normalizePlate = (plate) =>
                             plate.replace(/[\s*-]/g, "").toUpperCase();
                         const normalizedEntry = normalizePlate(entryPlate);
                         const normalizedExit = normalizePlate(exitPlate);
-                        
-                        matchScore = calculateSimilarity(normalizedEntry, normalizedExit);
+
+                        matchScore = calculateSimilarity(
+                            normalizedEntry,
+                            normalizedExit
+                        );
                         isPlateMatch = matchScore >= 0.7;
                     }
                 } else {
@@ -473,13 +662,14 @@ exports.autoCapture = async (req, res) => {
                 durationDisplay += `${seconds}s`;
 
                 // Tính phí sử dụng hàm mới
-                const hasSubscription = existingRecord.paymentType === "subscription";
+                const hasSubscription =
+                    existingRecord.paymentType === "subscription";
                 const feeInfo = calculateFeeWithSubscription(
-                    existingRecord.timeIn, 
-                    timeOut, 
+                    existingRecord.timeIn,
+                    timeOut,
                     hasSubscription
                 );
-                
+
                 let paymentMethod = existingRecord.paymentMethod;
                 let paymentStatus = existingRecord.paymentStatus;
 
@@ -494,22 +684,23 @@ exports.autoCapture = async (req, res) => {
                 existingRecord.fee = feeInfo.fee;
                 existingRecord.feeType = feeInfo.feeType;
                 existingRecord.originalFee = feeInfo.originalFee;
-                existingRecord.subscriptionDiscount = feeInfo.subscriptionDiscount || 0;
+                existingRecord.subscriptionDiscount =
+                    feeInfo.subscriptionDiscount || 0;
                 existingRecord.status = "completed";
                 existingRecord.paymentMethod = paymentMethod;
-                
+
                 // Thêm ảnh ra nếu có
                 if (uploadedImageData) {
                     existingRecord.exitImage = uploadedImageData;
                 }
-                
+
                 // Chỉ set paid nếu là subscription, còn lại để pending
                 if (hasSubscription) {
                     existingRecord.paymentStatus = "paid";
                 } else {
                     existingRecord.paymentStatus = "pending"; // Chờ nhân viên xác nhận
                 }
-                
+
                 await existingRecord.save();
 
                 // Nếu cần thanh toán, gửi WebSocket notification cho staff
@@ -524,7 +715,7 @@ exports.autoCapture = async (req, res) => {
                             fee: feeInfo.fee,
                             feeType: feeInfo.feeType,
                             parkingDuration: durationDisplay,
-                            paymentStatus: "pending"
+                            paymentStatus: "pending",
                         },
                         message: "Xe cần thanh toán - Vui lòng xác nhận",
                         timestamp: new Date(),
@@ -538,8 +729,12 @@ exports.autoCapture = async (req, res) => {
                 }
 
                 res.json({
-                    message: hasSubscription ? "🎫 Xe ra thành công - Sử dụng vé tháng" : "Vehicle exited - Payment required",
-                    action: hasSubscription ? "OUT_SUBSCRIPTION" : "OUT_PAYMENT_REQUIRED",
+                    message: hasSubscription
+                        ? "🎫 Xe ra thành công - Sử dụng vé tháng"
+                        : "Vehicle exited - Payment required",
+                    action: hasSubscription
+                        ? "OUT_SUBSCRIPTION"
+                        : "OUT_PAYMENT_REQUIRED",
                     uid: uid,
                     licensePlate: exitPlate || entryPlate, // Hiển thị biển số
                     entryPlate: entryPlate,
@@ -559,16 +754,26 @@ exports.autoCapture = async (req, res) => {
                     parkingDurationMs: parkingDurationMs,
                     parkingHours: `${feeInfo.parkingHours} giờ`,
                     billingHours: feeInfo.feeType,
-                    originalFee: hasSubscription ? "0 VND" : `${feeInfo.originalFee.toLocaleString()} VND`,
-                    fee: hasSubscription ? "🎫 MIỄN PHÍ - Vé tháng" : `${feeInfo.fee.toLocaleString()} VND`,
+                    originalFee: hasSubscription
+                        ? "0 VND"
+                        : `${feeInfo.originalFee.toLocaleString()} VND`,
+                    fee: hasSubscription
+                        ? "🎫 MIỄN PHÍ - Vé tháng"
+                        : `${feeInfo.fee.toLocaleString()} VND`,
                     feeNumber: feeInfo.fee,
                     paymentType: existingRecord.paymentType,
-                    subscriptionUsed: existingRecord.paymentType === "subscription",
-                    subscriptionDiscount: feeInfo.subscriptionDiscount > 0 ? `${feeInfo.subscriptionDiscount.toLocaleString()} VND` : null,
+                    subscriptionUsed:
+                        existingRecord.paymentType === "subscription",
+                    subscriptionDiscount:
+                        feeInfo.subscriptionDiscount > 0
+                            ? `${feeInfo.subscriptionDiscount.toLocaleString()} VND`
+                            : null,
                     paymentStatus: existingRecord.paymentStatus,
                     requiresStaffConfirmation: !hasSubscription, // Cần xác nhận nhân viên
                     parkingRecordId: existingRecord._id, // ID để xác nhận thanh toán
-                    subscriptionInfo: hasSubscription ? "✅ Vé tháng đã được sử dụng - Chúc quý khách đi đường bình an!" : null,
+                    subscriptionInfo: hasSubscription
+                        ? "✅ Vé tháng đã được sử dụng - Chúc quý khách đi đường bình an!"
+                        : null,
                     entryInfo: `${entryPlate} - ${timeIn.toLocaleTimeString(
                         "vi-VN",
                         { hour12: false }
@@ -583,20 +788,26 @@ exports.autoCapture = async (req, res) => {
                 // Gửi WebSocket notification cho dashboard về xe ra
                 const exitNotification = {
                     type: "vehicle_exit",
-                    message: hasSubscription 
-                        ? "✅ Xe ra thành công!" 
+                    message: hasSubscription
+                        ? "✅ Xe ra thành công!"
                         : "💰 Xe ra - Cần thanh toán",
                     licensePlate: exitPlate || entryPlate,
                     paymentType: existingRecord.paymentType,
                     subscriptionUsed: hasSubscription,
-                    fee: hasSubscription ? "MIỄN PHÍ" : `${feeInfo.fee.toLocaleString()} VND`,
+                    fee: hasSubscription
+                        ? "MIỄN PHÍ"
+                        : `${feeInfo.fee.toLocaleString()} VND`,
                     duration: durationDisplay,
                     gateStatus: "✅ Đã ra",
                     timestamp: new Date(),
                     uid: uid,
-                    details: hasSubscription 
-                        ? `Biển số: ${exitPlate || entryPlate}\nVé tháng: SỬ DỤNG\nThời gian đỗ: ${durationDisplay}\nPhí: MIỄN PHÍ\nTrạng thái: ✅ Đã ra thành công`
-                        : `Biển số: ${exitPlate || entryPlate}\nVé lượt: THANH TOÁN\nThời gian đỗ: ${durationDisplay}\nPhí: ${feeInfo.fee.toLocaleString()} VND\nTrạng thái: 💰 Cần thanh toán`
+                    details: hasSubscription
+                        ? `Biển số: ${
+                              exitPlate || entryPlate
+                          }\nVé tháng: SỬ DỤNG\nThời gian đỗ: ${durationDisplay}\nPhí: MIỄN PHÍ\nTrạng thái: ✅ Đã ra thành công`
+                        : `Biển số: ${
+                              exitPlate || entryPlate
+                          }\nVé lượt: THANH TOÁN\nThời gian đỗ: ${durationDisplay}\nPhí: ${feeInfo.fee.toLocaleString()} VND\nTrạng thái: 💰 Cần thanh toán`,
                 };
 
                 wsClients.forEach((ws) => {
@@ -619,24 +830,24 @@ exports.autoCapture = async (req, res) => {
         }
     } catch (err) {
         console.error("Lỗi khi tự động chụp:", err);
-        
+
         // Reset processing state trong cache
         const cacheKey = `${req.body.uid}-${req.body.cameraIndex}`;
         if (processingCache.has(cacheKey)) {
-            processingCache.set(cacheKey, { 
-                timestamp: Date.now(), 
-                processing: false 
+            processingCache.set(cacheKey, {
+                timestamp: Date.now(),
+                processing: false,
             });
         }
-        
+
         res.status(500).json({ error: err.message });
     } finally {
         // Đảm bảo reset processing state
         const cacheKey = `${req.body.uid}-${req.body.cameraIndex}`;
         if (processingCache.has(cacheKey)) {
-            processingCache.set(cacheKey, { 
-                timestamp: Date.now(), 
-                processing: false 
+            processingCache.set(cacheKey, {
+                timestamp: Date.now(),
+                processing: false,
             });
         }
     }
@@ -645,17 +856,26 @@ exports.autoCapture = async (req, res) => {
 // API để nhân viên xác nhận thanh toán và mở cổng
 exports.confirmPayment = async (req, res) => {
     try {
-        const { parkingRecordId, recordId, paymentMethod = "cash", staffNote } = req.body;
-        
+        const {
+            parkingRecordId,
+            recordId,
+            paymentMethod = "cash",
+            staffNote,
+        } = req.body;
+
         // Support both parameter names for compatibility
         const actualRecordId = parkingRecordId || recordId;
-        
-        console.log('Confirm payment request:', { actualRecordId, paymentMethod, body: req.body });
+
+        console.log("Confirm payment request:", {
+            actualRecordId,
+            paymentMethod,
+            body: req.body,
+        });
 
         if (!actualRecordId) {
             return res.status(400).json({
                 success: false,
-                message: "Missing parking record ID"
+                message: "Missing parking record ID",
             });
         }
 
@@ -663,14 +883,14 @@ exports.confirmPayment = async (req, res) => {
         if (!record) {
             return res.status(404).json({
                 success: false,
-                message: "Parking record not found"
+                message: "Parking record not found",
             });
         }
 
         if (record.paymentStatus === "paid") {
             return res.status(400).json({
                 success: false,
-                message: "Payment already confirmed"
+                message: "Payment already confirmed",
             });
         }
 
@@ -699,6 +919,18 @@ exports.confirmPayment = async (req, res) => {
             }
         });
 
+        // 🔧 LƯU GATE COMMAND CHO ESP32 POLLING
+        gateCommands.set(record.rfid, {
+            shouldOpen: true,
+            reason: "payment_confirmed",
+            licensePlate: record.licensePlate,
+            amount: record.fee,
+            paymentMethod: paymentMethod,
+            timestamp: Date.now(),
+        });
+
+        console.log(`💾 Saved gate command for ESP32 UID: ${record.rfid}`);
+
         // Broadcast payment completion để cập nhật UI
         const paymentNotification = {
             type: "payment_completed",
@@ -720,16 +952,65 @@ exports.confirmPayment = async (req, res) => {
                 licensePlate: record.licensePlate,
                 amount: record.fee,
                 paymentMethod: paymentMethod,
-                gateOpened: true
-            }
+                gateOpened: true,
+            },
         });
-
     } catch (err) {
         console.error("Lỗi khi xác nhận thanh toán:", err);
-        res.status(500).json({ 
-            success: false, 
+        res.status(500).json({
+            success: false,
             message: "Internal server error",
-            error: err.message 
+            error: err.message,
+        });
+    }
+};
+
+// ESP32 check có lệnh mở cổng không (polling)
+exports.checkGateCommand = async (req, res) => {
+    try {
+        const { uid } = req.params;
+
+        console.log(`🔍 ESP32 checking gate command for UID: ${uid}`);
+
+        if (!uid) {
+            return res.status(400).json({
+                shouldOpen: false,
+                error: "UID is required",
+            });
+        }
+
+        const command = gateCommands.get(uid);
+
+        if (command && command.shouldOpen) {
+            // Có lệnh mở cổng → trả về true và XÓA command (one-time use)
+            gateCommands.delete(uid);
+
+            console.log(
+                `✅ Gate command found for UID: ${uid} - Reason: ${command.reason}`
+            );
+
+            return res.json({
+                shouldOpen: true,
+                reason: command.reason,
+                message: "Gate command received - Opening gate",
+                timestamp: new Date(),
+                uid: uid,
+            });
+        } else {
+            // Không có lệnh → trả về false
+            return res.json({
+                shouldOpen: false,
+                message: "No gate command pending",
+                timestamp: new Date(),
+                uid: uid,
+            });
+        }
+    } catch (error) {
+        console.error("Error checking gate command:", error);
+        res.status(500).json({
+            shouldOpen: false,
+            error: "Internal server error",
+            message: error.message,
         });
     }
 };
