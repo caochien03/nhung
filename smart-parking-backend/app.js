@@ -32,7 +32,11 @@ app.use(helmet());
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 1000, // Increased temporarily for debugging
+  skip: (req) => {
+    // Skip rate limiting for health check and auth endpoints during debug
+    return req.path === '/health' || req.path.startsWith('/api/auth');
+  },
   message: {
     success: false,
     message: "Too many requests from this IP, please try again later.",
@@ -132,9 +136,5 @@ setupWebSocket(server);
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`🚀 Smart Parking System API running on port ${PORT}`);
-  console.log(`📊 WebSocket server ready for real-time communication`);
-  console.log(`🎫 Subscription management system active`);
-  console.log(`🧹 Cleanup jobs scheduled (daily at 2:00 AM & weekly storage reports)`);
-  console.log(`☁️  Cloudinary integration ready for image storage`);
+  console.log(`Smart Parking System API running on port ${PORT}`);
 });

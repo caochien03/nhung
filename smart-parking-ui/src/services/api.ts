@@ -18,11 +18,42 @@ const api = axios.create({
   timeout: 15000, // Tăng timeout lên 15 giây
 });
 
-// Request interceptor
+// Request interceptor with rate limiting
+let lastTokenCheck = 0;
+const TOKEN_CHECK_INTERVAL = 1000; // Only check token once per second
+
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
     if (token) {
+      const now = Date.now();
+      
+      // Only check token validity once per second to avoid spam
+      if (now - lastTokenCheck > TOKEN_CHECK_INTERVAL) {
+        lastTokenCheck = now;
+        
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          const currentTime = Date.now() / 1000;
+          
+          if (payload.exp && payload.exp < currentTime) {
+            localStorage.removeItem("token");
+            
+            // Redirect to login if not already there
+            if (window.location.pathname !== "/login") {
+              window.location.href = "/login";
+            }
+            return Promise.reject(new Error("Token expired"));
+          }
+        } catch (e) {
+          localStorage.removeItem("token");
+          if (window.location.pathname !== "/login") {
+            window.location.href = "/login";
+          }
+          return Promise.reject(new Error("Invalid token"));
+        }
+      }
+      
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -33,24 +64,25 @@ api.interceptors.request.use(
 // Response interceptor
 api.interceptors.response.use(
   (response) => {
-    console.log("API Response:", response.data);
+    // Don't log responses to reduce noise
     return response.data;
   },
   (error) => {
-    console.error("API Error:", error.response?.data || error.message);
-    
-    // Only logout on 401 Unauthorized, not on network errors
+    // Handle different types of errors
     if (error.response?.status === 401) {
-      console.log("Unauthorized access, logging out...");
-      localStorage.removeItem("token");
+      const errorMessage = error.response?.data?.message || "";
       
-      // Only redirect if not already on login page
-      if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
+      if (errorMessage.includes("Token expired") || 
+          errorMessage.includes("Invalid token") || 
+          errorMessage.includes("jwt malformed") ||
+          errorMessage.includes("malformed")) {
+        localStorage.removeItem("token");
+        
+        // Only redirect if not already on login page
+        if (window.location.pathname !== "/login") {
+          window.location.href = "/login";
+        }
       }
-    } else if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK') {
-      console.log("Network error, keeping user logged in...");
-      // Don't logout on network errors
     }
     
     return Promise.reject(error);
@@ -73,7 +105,6 @@ export const esp32API = {
 
   // Confirm payment and open gate
   confirmPayment: (data: { recordId: string; paymentMethod: string; confirmedBy: string }): Promise<ApiResponse<any>> => {
-    console.log('Calling confirmPayment API with data:', data);
     return api.post("/esp32/confirm-payment", data);
   },
 };
@@ -287,8 +318,12 @@ export const dashboardAPI = {
 // Subscriptions API
 export const subscriptionsAPI = {
   // Get active subscription
-  getActiveSubscription: (): Promise<ApiResponse<Subscription>> =>
-    api.get("/subscriptions/active"),
+  getActiveSubscription: (licensePlate?: string): Promise<ApiResponse<Subscription>> =>
+    api.get("/subscriptions/active", { params: licensePlate ? { licensePlate } : {} }),
+
+  // Get all active subscriptions
+  getAllActiveSubscriptions: (): Promise<ApiResponse<Subscription[]>> =>
+    api.get("/subscriptions/all-active"),
 
   // Get subscription history
   getSubscriptionHistory: (params?: any): Promise<ApiResponse<Subscription[]>> =>
@@ -302,7 +337,8 @@ export const subscriptionsAPI = {
   createSubscription: (data: { 
     type: "monthly" | "quarterly" | "yearly"; 
     paymentMethod: "balance" | "qr"; 
-    vehicleLimit?: number 
+    vehicleLimit?: number;
+    licensePlate: string;
   }): Promise<ApiResponse<any>> =>
     api.post("/subscriptions/create", data),
 
@@ -351,6 +387,10 @@ export const authAPI = {
   // Get current user
   getCurrentUser: (): Promise<ApiResponse<User>> =>
     api.get("/auth/me"),
+
+  // Refresh token
+  refreshToken: (): Promise<ApiResponse<{ token: string; user: User }>> =>
+    api.post("/auth/refresh"),
 };
 
 export default api;

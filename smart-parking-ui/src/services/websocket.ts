@@ -29,6 +29,7 @@ export interface PaymentEvent {
 
 class WebSocketService {
   private ws: WebSocket | null = null;
+  private isConnected = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectInterval = 3000;
@@ -39,22 +40,22 @@ class WebSocketService {
       this.ws = new WebSocket(url);
       
       this.ws.onopen = () => {
-        console.log("WebSocket connected");
+        this.isConnected = true;
         this.reconnectAttempts = 0;
+        this.notifyListeners("connected", null);
       };
 
       this.ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log("WebSocket message received:", message);
           this.handleMessage(message);
         } catch (error) {
-          console.error("Error parsing WebSocket message:", error);
+          // Error parsing WebSocket message
         }
       };
 
       this.ws.onclose = () => {
-        console.log("WebSocket disconnected");
+        this.isConnected = false;
         this.handleReconnect();
       };
 
@@ -69,7 +70,6 @@ class WebSocketService {
   private handleReconnect() {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
-      console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
       
       setTimeout(() => {
         this.connect();
@@ -77,6 +77,17 @@ class WebSocketService {
     } else {
       console.error("Max reconnection attempts reached");
     }
+  }
+
+  private notifyListeners(eventType: string, data: any) {
+    const listeners = this.listeners.get(eventType) || [];
+    listeners.forEach(listener => {
+      try {
+        listener(data);
+      } catch (error) {
+        console.error("Error in WebSocket listener:", error);
+      }
+    });
   }
 
   private handleMessage(message: any) {
@@ -117,10 +128,15 @@ class WebSocketService {
   }
 
   disconnect() {
+    this.isConnected = false;
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
+  }
+
+  getConnectionStatus() {
+    return this.isConnected;
   }
 }
 

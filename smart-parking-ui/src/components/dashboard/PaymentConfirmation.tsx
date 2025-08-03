@@ -44,7 +44,6 @@ const PaymentConfirmation: React.FC = () => {
   }, []);
 
   const handleNewPaymentRequired = (data: any) => {
-    console.log('🔔 New payment required:', data);
     // Thêm payment mới vào danh sách hoặc refresh
     fetchPendingPayments();
     
@@ -85,7 +84,6 @@ const PaymentConfirmation: React.FC = () => {
   };
 
   const handlePaymentCompleted = (data: any) => {
-    console.log('✅ Payment completed:', data);
     // Xóa payment đã hoàn thành khỏi danh sách
     fetchPendingPayments();
   };

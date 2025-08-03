@@ -1,37 +1,46 @@
 import React, { useState, useEffect } from "react";
-import { Calendar, Check, CreditCard, Clock, X, AlertCircle } from "lucide-react";
-import { Subscription } from "../../types";
+import { Calendar, Check, CreditCard, Clock, X, AlertCircle, Car, Plus } from "lucide-react";
+import { Subscription, Vehicle } from "../../types";
 import { subscriptionsAPI } from "../../services/api";
 import { toast } from "react-hot-toast";
 
 interface SubscriptionManagerProps {
   onSubscriptionUpdated?: () => void;
+  selectedVehicle?: Vehicle | null;
+  vehicles?: Vehicle[];
 }
 
-const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptionUpdated }) => {
-  const [activeSubscription, setActiveSubscription] = useState<Subscription | null>(null);
+const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ 
+  onSubscriptionUpdated, 
+  selectedVehicle,
+  vehicles = [] 
+}) => {
+  const [activeSubscriptions, setActiveSubscriptions] = useState<Subscription[]>([]);
   const [pricing, setPricing] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"monthly" | "quarterly" | "yearly">("monthly");
+  const [selectedLicensePlate, setSelectedLicensePlate] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<"balance" | "qr">("balance");
   const [purchasing, setPurchasing] = useState(false);
-  const [extending, setExtending] = useState(false);
-  const [showExtendModal, setShowExtendModal] = useState(false);
-  const [extensionType, setExtensionType] = useState<"monthly" | "quarterly" | "yearly">("monthly");
 
   useEffect(() => {
     loadData();
-  }, []);
+    // Set selected vehicle if provided
+    if (selectedVehicle) {
+      setSelectedLicensePlate(selectedVehicle.licensePlate);
+      setShowPurchaseModal(true);
+    }
+  }, [selectedVehicle]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       
-      // Load active subscription
-      const activeResponse = await subscriptionsAPI.getActiveSubscription();
+      // Load all active subscriptions
+      const activeResponse = await subscriptionsAPI.getAllActiveSubscriptions();
       if (activeResponse.success && activeResponse.data) {
-        setActiveSubscription(activeResponse.data);
+        setActiveSubscriptions(activeResponse.data);
       }
 
       // Load pricing
@@ -49,18 +58,35 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
 
   const handlePurchase = async () => {
     try {
+      if (!selectedLicensePlate) {
+        toast.error("Vui lòng chọn biển số xe");
+        return;
+      }
+
+      // Check if vehicle already has subscription
+      const existingSubscription = activeSubscriptions.find(
+        sub => sub.licensePlate === selectedLicensePlate
+      );
+      
+      if (existingSubscription) {
+        toast.error(`Xe ${selectedLicensePlate} đã có vé tháng`);
+        return;
+      }
+
       setPurchasing(true);
       
       const response = await subscriptionsAPI.createSubscription({
         type: selectedPlan,
         paymentMethod,
         vehicleLimit: 1,
+        licensePlate: selectedLicensePlate,
       });
 
       if (response.success) {
         if (paymentMethod === "balance") {
           toast.success("Đăng ký vé tháng thành công!");
           setShowPurchaseModal(false);
+          setSelectedLicensePlate("");
           loadData();
           onSubscriptionUpdated?.();
         } else {
@@ -77,12 +103,10 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
     }
   };
 
-  const handleCancel = async () => {
-    if (!activeSubscription) return;
-    
-    if (window.confirm("Bạn có chắc chắn muốn hủy vé tháng?")) {
+  const handleCancel = async (subscription: Subscription) => {
+    if (window.confirm(`Bạn có chắc chắn muốn hủy vé tháng cho xe ${subscription.licensePlate}?`)) {
       try {
-        const response = await subscriptionsAPI.cancelSubscription(activeSubscription._id || activeSubscription.id!);
+        const response = await subscriptionsAPI.cancelSubscription(subscription._id || subscription.id!);
         if (response.success) {
           toast.success("Đã hủy vé tháng");
           loadData();
@@ -95,31 +119,6 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
     }
   };
 
-  const handleExtend = async () => {
-    if (!activeSubscription) return;
-    
-    try {
-      setExtending(true);
-      
-      const response = await subscriptionsAPI.extendSubscription({
-        subscriptionId: activeSubscription._id || activeSubscription.id!,
-        extensionType
-      });
-
-      if (response.success) {
-        toast.success(`Gia hạn vé tháng thành công! Thêm ${extensionType === "monthly" ? "1 tháng" : extensionType === "quarterly" ? "3 tháng" : "12 tháng"}`);
-        setShowExtendModal(false);
-        loadData();
-        onSubscriptionUpdated?.();
-      }
-    } catch (error: any) {
-      console.error("Extend error:", error);
-      toast.error(error.response?.data?.message || "Không thể gia hạn vé tháng");
-    } finally {
-      setExtending(false);
-    }
-  };
-
   const getRemainingDays = (endDate: Date | string) => {
     const end = new Date(endDate);
     const now = new Date();
@@ -127,12 +126,19 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
+  // Get available vehicles (without active subscription)
+  const getAvailableVehicles = () => {
+    return vehicles.filter(vehicle => 
+      !activeSubscriptions.find(sub => sub.licensePlate === vehicle.licensePlate)
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Đang tải thông tin vé tháng...</p>
+          <p className="mt-4 text-gray-600">Đang tải dữ liệu...</p>
         </div>
       </div>
     );
@@ -140,129 +146,106 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
 
   return (
     <div className="space-y-6">
-      {/* Active Subscription */}
-      {activeSubscription ? (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                <Check className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Vé tháng đang hoạt động
-                </h3>
-                <p className="text-gray-600">
-                  Gói {activeSubscription.type === "monthly" ? "1 tháng" : 
-                       activeSubscription.type === "quarterly" ? "3 tháng" : "12 tháng"}
-                </p>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-blue-600">
-                {getRemainingDays(activeSubscription.endDate)} ngày
-              </div>
-              <div className="text-sm text-gray-600">còn lại</div>
-            </div>
-          </div>
-          
-          <div className="mt-4 grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-gray-600">Ngày bắt đầu</p>
-              <p className="font-medium">
-                {new Date(activeSubscription.startDate).toLocaleDateString("vi-VN")}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Ngày hết hạn</p>
-              <p className="font-medium">
-                {new Date(activeSubscription.endDate).toLocaleDateString("vi-VN")}
-              </p>
-            </div>
-          </div>
+      {/* Active Subscriptions */}
+      {activeSubscriptions.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Vé tháng hiện có</h3>
+          <div className="space-y-4">
+            {activeSubscriptions.map((subscription) => (
+              <div key={subscription._id || subscription.id} className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-3">
+                    <Car className="h-5 w-5 text-blue-600" />
+                    <div>
+                      <h4 className="font-medium text-blue-900">{subscription.licensePlate}</h4>
+                      <p className="text-sm text-blue-700">
+                        Gói {subscription.type === "monthly" ? "1 tháng" : 
+                             subscription.type === "quarterly" ? "3 tháng" : "12 tháng"}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                    Hoạt động
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-blue-700">
+                      <span className="font-medium">Còn lại:</span> {getRemainingDays(subscription.endDate)} ngày
+                    </p>
+                    <p className="text-blue-700">
+                      <span className="font-medium">Bắt đầu:</span> {new Date(subscription.startDate).toLocaleDateString("vi-VN")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-blue-700">
+                      <span className="font-medium">Hết hạn:</span> {new Date(subscription.endDate).toLocaleDateString("vi-VN")}
+                    </p>
+                    <p className="text-blue-700">
+                      <span className="font-medium">Giá:</span> {subscription.price.toLocaleString()} VND
+                    </p>
+                  </div>
+                </div>
 
-          <div className="mt-4 flex justify-end">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setShowExtendModal(true)}
-                className="px-4 py-2 text-blue-600 hover:text-blue-700 border border-blue-300 hover:border-blue-400 rounded-lg transition-colors"
-              >
-                Gia hạn
-              </button>
-              <button
-                onClick={handleCancel}
-                className="px-4 py-2 text-red-600 hover:text-red-700 border border-red-300 hover:border-red-400 rounded-lg transition-colors"
-              >
-                Hủy vé tháng
-              </button>
-            </div>
+                <div className="mt-4 flex space-x-2">
+                  <button
+                    onClick={() => handleCancel(subscription)}
+                    className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                  >
+                    Hủy vé tháng
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      ) : (
-        <div className="bg-yellow-50 rounded-lg p-6 border border-yellow-200">
-          <div className="flex items-center">
-            <AlertCircle className="w-6 h-6 text-yellow-600" />
-            <div className="ml-3">
-              <h3 className="text-lg font-medium text-yellow-800">
-                Bạn chưa có vé tháng
-              </h3>
-              <p className="text-yellow-700">
-                Đăng ký vé tháng để tiết kiệm chi phí gửi xe
-              </p>
+      )}
+
+      {/* Purchase New Subscription */}
+      {getAvailableVehicles().length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Đăng ký vé tháng mới</h3>
+            <button
+              onClick={() => setShowPurchaseModal(true)}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Mua vé tháng
+            </button>
+          </div>
+          
+          <div className="text-sm text-gray-600">
+            <p>Xe có thể đăng ký vé tháng:</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {getAvailableVehicles().map((vehicle) => (
+                <span 
+                  key={vehicle.id || vehicle._id}
+                  className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
+                >
+                  {vehicle.licensePlate}
+                </span>
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* Pricing Plans */}
-      {!activeSubscription && pricing && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Các gói vé tháng
-          </h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {Object.entries(pricing.features).map(([key, plan]: [string, any]) => (
-              <div
-                key={key}
-                className={`border rounded-lg p-4 cursor-pointer transition-all ${
-                  selectedPlan === key 
-                    ? "border-blue-500 bg-blue-50" 
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-                onClick={() => setSelectedPlan(key as any)}
-              >
-                <div className="text-center">
-                  <h4 className="font-semibold text-gray-900 capitalize">
-                    {plan.duration}
-                  </h4>
-                  <div className="mt-2">
-                    <span className="text-2xl font-bold text-blue-600">
-                      {plan.price.toLocaleString()}
-                    </span>
-                    <span className="text-gray-600"> VND</span>
-                  </div>
-                  {plan.savings > 0 && (
-                    <div className="mt-1 text-sm text-green-600">
-                      Tiết kiệm {plan.savings.toLocaleString()} VND
-                    </div>
-                  )}
-                  <div className="mt-2 text-sm text-gray-600">
-                    Giới hạn {plan.vehicleLimit} xe
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* No vehicles available */}
+      {vehicles.length === 0 && (
+        <div className="text-center py-8">
+          <Car className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+          <p className="text-gray-500 mb-4">Bạn chưa có xe nào được đăng ký</p>
+          <p className="text-sm text-gray-400">Vui lòng đăng ký xe trước khi mua vé tháng</p>
+        </div>
+      )}
 
-          <div className="mt-6 flex justify-center">
-            <button
-              onClick={() => setShowPurchaseModal(true)}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-            >
-              Đăng ký vé tháng
-            </button>
-          </div>
+      {/* All vehicles have subscriptions */}
+      {vehicles.length > 0 && getAvailableVehicles().length === 0 && activeSubscriptions.length > 0 && (
+        <div className="text-center py-8">
+          <Check className="h-12 w-12 text-green-500 mx-auto mb-3" />
+          <p className="text-gray-500">Tất cả xe đã có vé tháng</p>
         </div>
       )}
 
@@ -271,9 +254,12 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Xác nhận đăng ký</h3>
+              <h3 className="text-lg font-semibold">Đăng ký vé tháng</h3>
               <button
-                onClick={() => setShowPurchaseModal(false)}
+                onClick={() => {
+                  setShowPurchaseModal(false);
+                  setSelectedLicensePlate("");
+                }}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <X className="w-6 h-6" />
@@ -281,21 +267,57 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
             </div>
 
             <div className="space-y-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="flex justify-between">
-                  <span>Gói đã chọn:</span>
-                  <span className="font-medium">
-                    {pricing?.features[selectedPlan]?.duration}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Giá:</span>
-                  <span className="font-bold text-blue-600">
-                    {pricing?.features[selectedPlan]?.price.toLocaleString()} VND
-                  </span>
+              {/* Vehicle Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Chọn xe
+                </label>
+                <select
+                  value={selectedLicensePlate}
+                  onChange={(e) => setSelectedLicensePlate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  required
+                >
+                  <option value="">Chọn biển số xe</option>
+                  {getAvailableVehicles().map((vehicle) => (
+                    <option key={vehicle.id || vehicle._id} value={vehicle.licensePlate}>
+                      {vehicle.licensePlate} ({vehicle.vehicleType})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Plan Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Chọn gói
+                </label>
+                <div className="space-y-2">
+                  {pricing && Object.entries(pricing.features).map(([key, plan]: [string, any]) => (
+                    <label
+                      key={key}
+                      className={`flex items-center p-3 border rounded-lg cursor-pointer ${
+                        selectedPlan === key ? "border-blue-500 bg-blue-50" : "border-gray-200"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="plan"
+                        value={key}
+                        checked={selectedPlan === key}
+                        onChange={(e) => setSelectedPlan(e.target.value as any)}
+                        className="mr-3"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium">{plan.duration}</div>
+                        <div className="text-sm text-gray-600">{plan.price.toLocaleString()} VND</div>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
 
+              {/* Payment Method */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Phương thức thanh toán
@@ -304,117 +326,58 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onSubscriptio
                   <label className="flex items-center">
                     <input
                       type="radio"
+                      name="paymentMethod"
                       value="balance"
                       checked={paymentMethod === "balance"}
                       onChange={(e) => setPaymentMethod(e.target.value as any)}
                       className="mr-2"
                     />
-                    <span>Số dư tài khoản</span>
+                    Số dư tài khoản
                   </label>
                   <label className="flex items-center">
                     <input
                       type="radio"
+                      name="paymentMethod"
                       value="qr"
                       checked={paymentMethod === "qr"}
                       onChange={(e) => setPaymentMethod(e.target.value as any)}
                       className="mr-2"
                     />
-                    <span>Quét mã QR</span>
+                    QR Code
                   </label>
                 </div>
               </div>
 
-              <div className="flex space-x-3">
+              {/* Price Summary */}
+              {pricing && selectedPlan && (
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <div className="flex justify-between">
+                    <span>Tổng cần thanh toán:</span>
+                    <span className="font-medium">
+                      {pricing.features[selectedPlan]?.price.toLocaleString()} VND
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex space-x-3 pt-4">
                 <button
-                  onClick={() => setShowPurchaseModal(false)}
-                  disabled={purchasing}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                  type="button"
+                  onClick={() => {
+                    setShowPurchaseModal(false);
+                    setSelectedLicensePlate("");
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                 >
                   Hủy
                 </button>
                 <button
                   onClick={handlePurchase}
-                  disabled={purchasing}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  disabled={purchasing || !selectedLicensePlate}
+                  className="flex-1 px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {purchasing ? "Đang xử lý..." : "Xác nhận"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Extend Subscription Modal */}
-      {showExtendModal && pricing && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Gia hạn vé tháng</h3>
-              <button
-                onClick={() => setShowExtendModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Chọn gói gia hạn
-                </label>
-                <div className="space-y-2">
-                  {Object.entries(pricing.features).map(([key, plan]: [string, any]) => (
-                    <label key={key} className="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                      <input
-                        type="radio"
-                        value={key}
-                        checked={extensionType === key}
-                        onChange={(e) => setExtensionType(e.target.value as any)}
-                        className="mr-3"
-                      />
-                      <div className="flex-1">
-                        <div className="flex justify-between">
-                          <span className="font-medium">{plan.duration}</span>
-                          <span className="font-bold text-blue-600">
-                            {plan.price.toLocaleString()} VND
-                          </span>
-                        </div>
-                        {plan.savings > 0 && (
-                          <div className="text-sm text-green-600">
-                            Tiết kiệm {plan.savings.toLocaleString()} VND
-                          </div>
-                        )}
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="flex justify-between">
-                  <span>Số tiền cần thanh toán:</span>
-                  <span className="font-bold text-blue-600">
-                    {pricing.features[extensionType]?.price.toLocaleString()} VND
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => setShowExtendModal(false)}
-                  disabled={extending}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Hủy
-                </button>
-                <button
-                  onClick={handleExtend}
-                  disabled={extending}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {extending ? "Đang xử lý..." : "Xác nhận gia hạn"}
+                  {purchasing ? "Đang xử lý..." : "Đăng ký"}
                 </button>
               </div>
             </div>

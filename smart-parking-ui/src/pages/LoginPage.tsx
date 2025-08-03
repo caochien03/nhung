@@ -31,19 +31,15 @@ const LoginPage: React.FC = () => {
 
     setLoading(true);
     try {
-      console.log("LoginPage: Attempting login...");
       const success = await login(formData.username, formData.password);
-      console.log("LoginPage: Login result:", success);
       
       if (success) {
         toast.success("Đăng nhập thành công!");
-        console.log("LoginPage: Redirecting to /");
         navigate("/");
       } else {
         toast.error("Tên đăng nhập hoặc mật khẩu không đúng");
       }
     } catch (error) {
-      console.error("LoginPage: Login error:", error);
       toast.error("Có lỗi xảy ra khi đăng nhập");
     } finally {
       setLoading(false);

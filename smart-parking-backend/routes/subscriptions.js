@@ -8,6 +8,7 @@ router.use(authenticateToken);
 
 // User subscription routes
 router.get("/active", subscriptionController.getActiveSubscription);
+router.get("/all-active", subscriptionController.getAllActiveSubscriptions);
 router.get("/history", subscriptionController.getSubscriptionHistory);
 router.get("/pricing", subscriptionController.getSubscriptionPricing);
 router.post("/create", subscriptionController.createSubscription);

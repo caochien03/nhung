@@ -3,6 +3,7 @@ const Payment = require("../models/Payment");
 const User = require("../models/User");
 const ParkingRecord = require("../models/ParkingRecord");
 const Vehicle = require("../models/Vehicle");
+const { fuzzyMatchLicensePlate, findBestMatch } = require("../utils/licensePlateHelper");
 
 // Pricing configuration with enhanced features
 const SUBSCRIPTION_PRICES = {
@@ -27,12 +28,21 @@ const BULK_DISCOUNTS = {
 // Get user's active subscription
 exports.getActiveSubscription = async (req, res) => {
   try {
-    const subscription = await Subscription.findOne({
+    const { licensePlate } = req.query;
+    
+    let query = {
       userId: req.user._id,
       status: "active",
       paymentStatus: "paid",
       endDate: { $gte: new Date() }
-    }).populate("paymentId");
+    };
+
+    // If license plate is provided, find subscription for specific vehicle
+    if (licensePlate) {
+      query.licensePlate = licensePlate.toUpperCase().trim();
+    }
+
+    const subscription = await Subscription.findOne(query).populate("paymentId");
 
     res.json({
       success: true,
@@ -40,6 +50,29 @@ exports.getActiveSubscription = async (req, res) => {
     });
   } catch (error) {
     console.error("Get active subscription error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// Get all user's active subscriptions (for multiple vehicles)
+exports.getAllActiveSubscriptions = async (req, res) => {
+  try {
+    const subscriptions = await Subscription.find({
+      userId: req.user._id,
+      status: "active",
+      paymentStatus: "paid",
+      endDate: { $gte: new Date() }
+    }).populate("paymentId").sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: subscriptions,
+    });
+  } catch (error) {
+    console.error("Get all active subscriptions error:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -85,7 +118,7 @@ exports.getSubscriptionHistory = async (req, res) => {
 // Create new subscription with enhanced validation
 exports.createSubscription = async (req, res) => {
   try {
-    const { type = "monthly", paymentMethod = "balance", vehicleLimit } = req.body;
+    const { type = "monthly", paymentMethod = "balance", vehicleLimit, licensePlate } = req.body;
 
     if (!SUBSCRIPTION_PRICES[type]) {
       return res.status(400).json({
@@ -94,9 +127,34 @@ exports.createSubscription = async (req, res) => {
       });
     }
 
-    // Check if user already has active subscription
+    // Require license plate
+    if (!licensePlate || !licensePlate.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "License plate is required for subscription",
+      });
+    }
+
+    const formattedLicensePlate = licensePlate.toUpperCase().trim();
+
+    // Check if user owns this vehicle
+    const vehicle = await Vehicle.findOne({
+      licensePlate: formattedLicensePlate,
+      userId: req.user._id,
+      isActive: true
+    });
+
+    if (!vehicle) {
+      return res.status(400).json({
+        success: false,
+        message: "Vehicle not found or not owned by you. Please register the vehicle first.",
+      });
+    }
+
+    // Check if user already has active subscription for this vehicle
     const activeSubscription = await Subscription.findOne({
       userId: req.user._id,
+      licensePlate: formattedLicensePlate,
       status: "active",
       paymentStatus: "paid",
       endDate: { $gte: new Date() }
@@ -105,12 +163,13 @@ exports.createSubscription = async (req, res) => {
     if (activeSubscription) {
       return res.status(400).json({
         success: false,
-        message: "You already have an active subscription. Please wait for it to expire or cancel it first.",
+        message: `Vehicle ${formattedLicensePlate} already has an active subscription. Please wait for it to expire or cancel it first.`,
         data: {
           currentSubscription: {
             type: activeSubscription.type,
             endDate: activeSubscription.endDate,
-            remainingDays: activeSubscription.getRemainingDays()
+            remainingDays: activeSubscription.getRemainingDays(),
+            licensePlate: activeSubscription.licensePlate
           }
         }
       });
@@ -170,7 +229,7 @@ exports.createSubscription = async (req, res) => {
         status: "completed",
         transactionId: `SUB${Date.now()}`,
         processedBy: req.user._id,
-        notes: `Subscription payment - ${type} (${finalVehicleLimit} vehicles)`,
+        notes: `Subscription payment - ${type} for vehicle ${formattedLicensePlate}`,
       });
       await payment.save();
 
@@ -182,7 +241,8 @@ exports.createSubscription = async (req, res) => {
         endDate,
         price,
         status: "active",
-        vehicleLimit: finalVehicleLimit,
+        vehicleLimit: 1, // Always 1 for specific vehicle
+        licensePlate: formattedLicensePlate,
         paymentStatus: "paid",
         paymentId: payment._id,
       });
@@ -196,8 +256,8 @@ exports.createSubscription = async (req, res) => {
           subscription,
           payment,
           userBalance: user.balance,
-          vehicleLimit: finalVehicleLimit,
-          maxVehicleLimit
+          vehicleLimit: 1,
+          licensePlate: formattedLicensePlate
         },
       });
 
@@ -210,7 +270,8 @@ exports.createSubscription = async (req, res) => {
         endDate,
         price,
         status: "pending",
-        vehicleLimit: finalVehicleLimit,
+        vehicleLimit: 1, // Always 1 for specific vehicle
+        licensePlate: formattedLicensePlate,
         paymentStatus: "pending",
       });
 
@@ -345,70 +406,77 @@ exports.checkSubscriptionForParking = async (userId, licensePlate) => {
     // Update expired subscriptions first
     await exports.updateExpiredSubscriptions();
     
-    // Find active subscription
-    const subscription = await Subscription.findOne({
+    const formattedLicensePlate = licensePlate.toUpperCase().trim();
+    
+    // First, try exact match
+    let subscription = await Subscription.findOne({
       userId,
+      licensePlate: formattedLicensePlate,
       status: "active",
       paymentStatus: "paid",
       endDate: { $gte: new Date() }
     });
 
-    if (!subscription) {
-      return { 
-        hasSubscription: false, 
-        reason: "No active subscription found"
-      };
-    }
-
-    // Check if license plate belongs to user
-    const vehicle = await Vehicle.findOne({
-      userId,
-      licensePlate: licensePlate.toUpperCase(),
-      isActive: true
-    });
-
-    if (!vehicle) {
-      return { 
-        hasSubscription: false, 
-        reason: "Vehicle not registered to user"
-      };
-    }
-
-    // Check vehicle limit - count currently parked vehicles with subscription
-    const currentlyParked = await ParkingRecord.countDocuments({
-      userId,
-      status: "active",
-      paymentType: "subscription",
-      timeOut: { $exists: false }
-    });
-
-    if (currentlyParked >= subscription.vehicleLimit) {
+    if (subscription) {
       return { 
         hasSubscription: true, 
-        canUse: false,
-        reason: `Vehicle limit exceeded (${currentlyParked}/${subscription.vehicleLimit})`,
-        subscription
+        subscription,
+        matchMethod: 'exact',
+        canUse: true,
+        remainingDays: Math.ceil((subscription.endDate - new Date()) / (1000 * 60 * 60 * 24))
       };
     }
 
-    // Update usage statistics
-    subscription.incrementUsage();
+    // If no exact match, try fuzzy matching with user's registered vehicles
+    const userVehicles = await Vehicle.find({
+      userId,
+      isActive: true
+    }).select('licensePlate');
 
-    return {
-      hasSubscription: true,
-      canUse: true,
-      subscription,
-      remainingDays: subscription.getRemainingDays(),
-      vehicleLimit: subscription.vehicleLimit,
-      currentlyParked
+    const registeredPlates = userVehicles.map(v => v.licensePlate);
+    
+    // Find best matching plate using fuzzy logic
+    const bestMatch = findBestMatch(formattedLicensePlate, registeredPlates, 0.75);
+    
+    if (bestMatch && bestMatch.isMatch) {
+      // Check subscription for the matched plate
+      subscription = await Subscription.findOne({
+        userId,
+        licensePlate: bestMatch.registeredPlate,
+        status: "active",
+        paymentStatus: "paid",
+        endDate: { $gte: new Date() }
+      });
+
+      if (subscription) {
+        console.log(`🔍 Fuzzy match: OCR "${formattedLicensePlate}" → Registered "${bestMatch.registeredPlate}"`);
+        
+        return { 
+          hasSubscription: true, 
+          subscription,
+          matchMethod: 'fuzzy',
+          matchDetails: bestMatch,
+          ocrPlate: formattedLicensePlate,
+          registeredPlate: bestMatch.registeredPlate,
+          canUse: true,
+          remainingDays: Math.ceil((subscription.endDate - new Date()) / (1000 * 60 * 60 * 24))
+        };
+      }
+    }
+
+    return { 
+      hasSubscription: false, 
+      reason: `No active subscription found for vehicle ${formattedLicensePlate}. Checked ${registeredPlates.length} registered vehicles.`,
+      checkedPlates: registeredPlates,
+      bestMatch: bestMatch || null
     };
 
   } catch (error) {
-    console.error("Check subscription error:", error);
+    console.error("Error checking subscription:", error);
     return { 
       hasSubscription: false, 
-      reason: "System error",
-      error: error.message 
+      reason: "Error checking subscription",
+      error: error.message
     };
   }
 };

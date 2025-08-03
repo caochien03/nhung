@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from "react";
 import { User } from "../types";
 import { authAPI } from "../services/api";
 
@@ -8,6 +8,7 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   register: (userData: Partial<User>) => Promise<boolean>;
+  refreshToken: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,73 +28,132 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Rate limiting for checkAuth function
+  const lastAuthCheckRef = useRef(0);
+  const AUTH_CHECK_COOLDOWN = 5000; // 5 seconds cooldown between auth checks
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
+    const now = Date.now();
+    
+    // Rate limiting - don't check auth too frequently
+    if (now - lastAuthCheckRef.current < AUTH_CHECK_COOLDOWN) {
+      return;
+    }
+    
+    lastAuthCheckRef.current = now;
+    
     try {
       const token = localStorage.getItem("token");
       if (token) {
-        console.log("Checking auth with existing token...");
+        
+        // Check if token is expired before making request
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          const now = Date.now() / 1000;
+          
+          if (payload.exp && payload.exp < now) {
+            localStorage.removeItem("token");
+            setUser(null);
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          localStorage.removeItem("token");
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+        
         const response = await authAPI.getCurrentUser();
         if (response.success && response.data) {
+          // Check if server provided a new token
+          if ((response as any).newToken) {
+            localStorage.setItem("token", (response as any).newToken);
+          }
+          
           // Ensure user object has both _id and id for compatibility
           const user = response.data;
           if (user._id && !user.id) {
             user.id = user._id;
           }
-          console.log("Auth check successful, user:", user.username);
           setUser(user);
         } else {
-          console.log("Auth check failed, removing token");
           localStorage.removeItem("token");
           setUser(null);
         }
       } else {
-        console.log("No token found");
         setUser(null);
       }
     } catch (error: any) {
-      console.error("Auth check failed:", error);
-      // Only remove token if it's actually invalid, not on network errors
-      if (error.response && error.response.status === 401) {
-        console.log("Token invalid, removing");
+      // Handle different types of errors
+      if (error.response) {
+        const status = error.response.status;
+        if (status === 401) {
+          localStorage.removeItem("token");
+          setUser(null);
+        } else if (status >= 500) {
+          // Keep existing user state if it's a server error
+        } else {
+          localStorage.removeItem("token");
+          setUser(null);
+        }
+      } else if (error.code === 'NETWORK_ERROR' || error.message.includes('Network Error')) {
+        // Keep existing user state if it's just a network error
+      } else {
         localStorage.removeItem("token");
         setUser(null);
-      } else {
-        console.log("Network error during auth check, keeping token");
-        // Keep existing user state if it's just a network error
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, [AUTH_CHECK_COOLDOWN]);
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+  useEffect(() => {
+    checkAuth();
+    
+    // Set up periodic token validation every 30 minutes
+    const tokenCheckInterval = setInterval(() => {
+      const token = localStorage.getItem("token");
+      if (token) {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          const now = Date.now() / 1000;
+          
+          // Check if token will expire in the next 2 hours
+          if (payload.exp && (payload.exp - now) < 7200) {
+            checkAuth();
+          }
+        } catch (e) {
+          localStorage.removeItem("token");
+          setUser(null);
+        }
+      }
+    }, 30 * 60 * 1000); // Check every 30 minutes
+    
+    return () => {
+      clearInterval(tokenCheckInterval);
+    };
+  }, [checkAuth]);
+
+  const login = async (username: string, password: string) => {
     try {
-      console.log("Attempting login with:", username);
       const response = await authAPI.login({ username, password });
-      console.log("Login response:", response);
       
-      if (response && response.success && response.data) {
-        console.log("Login successful, setting token and user");
-        localStorage.setItem("token", response.data.token);
+      if (response.success && response.data) {
+        const { token, user } = response.data;
+        localStorage.setItem("token", token);
+        
         // Ensure user object has both _id and id for compatibility
-        const user = response.data.user;
         if (user._id && !user.id) {
           user.id = user._id;
         }
-        console.log("Setting user:", user);
         setUser(user);
         return true;
       } else {
-        console.log("Login failed - invalid response:", response);
         return false;
       }
     } catch (error) {
-      console.error("Login failed:", error);
       return false;
     }
   };
@@ -111,7 +171,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       return false;
     } catch (error) {
-      console.error("Registration failed:", error);
+      return false;
+    }
+  };
+
+  const refreshToken = async (): Promise<boolean> => {
+    try {
+      const response = await authAPI.refreshToken();
+      
+      if (response.success && response.data) {
+        localStorage.setItem("token", response.data.token);
+        
+        // Ensure user object has both _id and id for compatibility
+        const user = response.data.user;
+        if (user._id && !user.id) {
+          user.id = user._id;
+        }
+        setUser(user);
+        return true;
+      } else {
+        localStorage.removeItem("token");
+        setUser(null);
+        return false;
+      }
+    } catch (error) {
+      localStorage.removeItem("token");
+      setUser(null);
       return false;
     }
   };
@@ -122,6 +207,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     login,
     logout,
     register,
+    refreshToken,
   };
 
   return (

@@ -126,10 +126,38 @@ exports.getCurrentUser = async (req, res) => {
       });
     }
 
-    res.json({
+    // Generate new token if current one will expire soon
+    const token = req.headers.authorization?.split(' ')[1];
+    let newToken = null;
+    
+    if (token) {
+      try {
+        const jwt = require("jsonwebtoken");
+        const decoded = jwt.decode(token);
+        const now = Math.floor(Date.now() / 1000);
+        
+        // If token expires in less than 2 days, generate new one
+        if (decoded.exp && (decoded.exp - now) < 2 * 24 * 60 * 60) {
+          console.log("Token will expire soon, generating new token");
+          const { generateToken } = require("../middleware/auth");
+          newToken = generateToken(user._id);
+        }
+      } catch (error) {
+        console.log("Error checking token expiration:", error);
+      }
+    }
+
+    const response = {
       success: true,
       data: user,
-    });
+    };
+
+    // Include new token if generated
+    if (newToken) {
+      response.newToken = newToken;
+    }
+
+    res.json(response);
   } catch (error) {
     console.error("Get current user error:", error);
     res.status(500).json({
@@ -200,6 +228,37 @@ exports.changePassword = async (req, res) => {
     });
   } catch (error) {
     console.error("Change password error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// Refresh token
+exports.refreshToken = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select("-password");
+    
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found or inactive",
+      });
+    }
+
+    // Generate new token
+    const token = generateToken(user._id);
+
+    res.json({
+      success: true,
+      data: {
+        token,
+        user,
+      },
+    });
+  } catch (error) {
+    console.error("Refresh token error:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error",

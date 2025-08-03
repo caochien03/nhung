@@ -32,6 +32,12 @@ const SubscriptionSchema = new mongoose.Schema({
     type: Number,
     default: 1, // Số xe tối đa được gửi miễn phí
   },
+  licensePlate: {
+    type: String,
+    required: true,
+    uppercase: true,
+    trim: true,
+  },
   paymentStatus: {
     type: String,
     enum: ["pending", "paid", "failed"],
@@ -66,6 +72,8 @@ const SubscriptionSchema = new mongoose.Schema({
 // Indexes for better performance
 SubscriptionSchema.index({ userId: 1, status: 1 });
 SubscriptionSchema.index({ endDate: 1, status: 1 });
+SubscriptionSchema.index({ licensePlate: 1, status: 1 });
+SubscriptionSchema.index({ userId: 1, licensePlate: 1, status: 1 });
 
 // Check if subscription is valid
 SubscriptionSchema.methods.isValid = function() {

@@ -9,6 +9,7 @@ router.post("/register", authController.register);
 
 // Protected routes
 router.get("/me", authenticateToken, authController.getCurrentUser);
+router.post("/refresh", authenticateToken, authController.refreshToken);
 router.put("/profile", authenticateToken, authController.updateProfile);
 router.put("/change-password", authenticateToken, authController.changePassword);
 

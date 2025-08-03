@@ -5,7 +5,6 @@ import CameraMonitor from "../../components/dashboard/CameraMonitor";
 import PaymentManager from "../../components/dashboard/PaymentManager";
 import PaymentConfirmation from "../../components/dashboard/PaymentConfirmation";
 import PaymentPopup from "../../components/dashboard/PaymentPopup";
-import PaymentDebugger from "../../components/debug/PaymentDebugger";
 import BarrieControl from "../../components/dashboard/BarrieControl";
 import CameraManagement from "../../components/dashboard/CameraManagement";
 import SubscriptionStatsPanel from "../../components/dashboard/SubscriptionStatsPanel";
@@ -45,14 +44,8 @@ const StaffDashboard: React.FC = () => {
     loadDashboardData();
     setupWebSocket();
     
-    // Kết nối WebSocket với debug
-    console.log("Đang kết nối WebSocket...");
+    // Kết nối WebSocket
     wsService.connect("ws://localhost:8080");
-    
-    // Test WebSocket connection sau 2 giây
-    setTimeout(() => {
-      console.log("Test WebSocket listeners:", wsService);
-    }, 2000);
 
     // Auto refresh data mỗi 30 giây
     const refreshInterval = setInterval(() => {
@@ -557,11 +550,6 @@ const StaffDashboard: React.FC = () => {
             <div className="space-y-6">
               <PaymentConfirmation />
               
-              {/* Debug section - Remove in production */}
-              <div className="border-t pt-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-600">Debug Tools (Development)</h3>
-                <PaymentDebugger />
-              </div>
             </div>
           )}
 

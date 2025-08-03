@@ -3,6 +3,7 @@ const Vehicle = require("../models/Vehicle");
 const User = require("../models/User");
 const recognizePlate = require("../utils/recognizePlate_fastapi");
 const { uploadBase64Image } = require("../utils/cloudinaryHelper");
+const { findBestMatch } = require("../utils/licensePlateHelper");
 
 // Create parking record
 exports.createParkingRecord = async (req, res) => {
@@ -26,15 +27,30 @@ exports.createParkingRecord = async (req, res) => {
       licensePlate = await recognizePlate(image);
     }
 
-    // Check if vehicle is registered
+    // Check if vehicle is registered with fuzzy matching
     let userId = null;
     let isRegisteredUser = false;
+    let matchedLicensePlate = licensePlate;
     
     if (licensePlate) {
-      const vehicle = await Vehicle.findOne({ 
+      let vehicle = await Vehicle.findOne({ 
         licensePlate: licensePlate.toUpperCase(),
         isActive: true 
       });
+      
+      // If no exact match, try fuzzy matching
+      if (!vehicle) {
+        const allVehicles = await Vehicle.find({ isActive: true });
+        const registeredPlates = allVehicles.map(v => v.licensePlate);
+        
+        const bestMatch = findBestMatch(licensePlate, registeredPlates, 0.75);
+        
+        if (bestMatch && bestMatch.isMatch) {
+          vehicle = allVehicles.find(v => v.licensePlate === bestMatch.registeredPlate);
+          matchedLicensePlate = bestMatch.registeredPlate;
+          console.log(`🔍 Parking fuzzy match: "${licensePlate}" → "${bestMatch.registeredPlate}"`);
+        }
+      }
       
       if (vehicle) {
         userId = vehicle.userId;

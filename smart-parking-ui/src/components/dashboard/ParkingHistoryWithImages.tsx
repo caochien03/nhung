@@ -43,6 +43,41 @@ const ParkingHistoryWithImages: React.FC = () => {
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
   const [selectedImage, setSelectedImage] = useState<{ url: string; title: string } | null>(null);
 
+  // Group records theo RFID để kết hợp entry và exit
+  const groupRecordsByRFID = (records: any[]) => {
+    const groupedMap = new Map();
+    
+    records.forEach(record => {
+      const rfid = record.rfid;
+      
+      if (groupedMap.has(rfid)) {
+        // Đã có record với RFID này, merge data
+        const existing = groupedMap.get(rfid);
+        
+        // Kết hợp dữ liệu từ 2 records
+        const merged = {
+          ...existing,
+          ...record,
+          // Giữ cả 2 ảnh nếu có
+          entryImage: existing.entryImage || record.entryImage,
+          exitImage: existing.exitImage || record.exitImage,
+          // Giữ cả 2 thời gian
+          timeIn: existing.timeIn || record.timeIn,
+          timeOut: existing.timeOut || record.timeOut,
+          // Ưu tiên trạng thái completed
+          status: record.status === 'completed' ? 'completed' : existing.status
+        };
+        
+        groupedMap.set(rfid, merged);
+      } else {
+        // Record đầu tiên với RFID này
+        groupedMap.set(rfid, record);
+      }
+    });
+    
+    return Array.from(groupedMap.values());
+  };
+
   // Fetch data theo ngày
   const fetchDailyHistory = async (date = selectedDate, page = 1) => {
     try {
@@ -58,18 +93,21 @@ const ParkingHistoryWithImages: React.FC = () => {
       const response = await parkingAPI.getParkingHistoryWithImages(params);
       
       if (response.success && response.data && response.data.records) {
-        setData(response.data.records);
+        // Group records theo RFID trước khi set data
+        const groupedRecords = groupRecordsByRFID(response.data.records);
+        setData(groupedRecords);
         setTotalRecords(response.data.pagination.total);
-        // Set summary từ data
+        
+        // Set summary từ grouped data
         setSummary({
-          totalEntries: response.data.records.filter(r => r.timeIn).length,
-          totalExits: response.data.records.filter(r => r.timeOut).length,
+          totalEntries: groupedRecords.filter(r => r.timeIn).length,
+          totalExits: groupedRecords.filter(r => r.timeOut).length,
           date: selectedDate
         });
         setCurrentPage(page);
       }
     } catch (error) {
-      console.error('Error fetching daily history:', error);
+      // Error fetching daily history
     } finally {
       setLoading(false);
     }
@@ -91,19 +129,22 @@ const ParkingHistoryWithImages: React.FC = () => {
       const response = await parkingAPI.getParkingHistoryRange(params);
       
       if (response.success && response.data && response.data.records) {
-        setData(response.data.records);
+        // Group records theo RFID trước khi set data  
+        const groupedRecords = groupRecordsByRFID(response.data.records);
+        setData(groupedRecords);
         setTotalRecords(response.data.pagination.total);
-        // Set summary từ data
+        
+        // Set summary từ grouped data
         setSummary({
-          totalEntries: response.data.records.filter(r => r.timeIn).length,
-          totalExits: response.data.records.filter(r => r.timeOut).length,
+          totalEntries: groupedRecords.filter(r => r.timeIn).length,
+          totalExits: groupedRecords.filter(r => r.timeOut).length,
           startDate,
           endDate
         });
         setCurrentPage(page);
       }
     } catch (error) {
-      console.error('Error fetching range history:', error);
+      // Error fetching range history
     } finally {
       setLoading(false);
     }
@@ -150,21 +191,108 @@ const ParkingHistoryWithImages: React.FC = () => {
     }
   };
 
+  // Validate ObjectId
+  const isValidObjectId = (id: string): boolean => {
+    return /^[0-9a-fA-F]{24}$/.test(id);
+  };
+
   // Xem chi tiết record
   const viewRecordDetail = async (recordId: string) => {
     try {
-      const response = await parkingAPI.getParkingRecordWithImages(recordId);
+      // Loại bỏ các ký tự không hợp lệ khỏi ID (như _in, _out)
+      const cleanedId = recordId.replace(/_in$|_out$/, '');
+      
+      // Validate ObjectId format
+      if (!isValidObjectId(cleanedId)) {
+        alert('ID không hợp lệ. Không thể tải chi tiết bản ghi.');
+        return;
+      }
+      
+      const response = await parkingAPI.getParkingRecordWithImages(cleanedId);
       if (response.success) {
         setSelectedRecord(response.data);
       }
     } catch (error) {
-      console.error('Error loading record detail:', error);
+      // Hiển thị thông báo lỗi cho user
+      alert('Không thể tải chi tiết bản ghi. Vui lòng thử lại.');
     }
   };
 
   // Format thời gian
-  const formatTime = (timestamp: string | Date) => {
-    return new Date(timestamp).toLocaleString('vi-VN');
+  const formatTime = (timestamp: string | Date | { $date: string } | null | undefined) => {
+    if (!timestamp) return '-';
+    
+    let date: Date;
+    if (typeof timestamp === 'string') {
+      date = new Date(timestamp);
+    } else if (timestamp instanceof Date) {
+      date = timestamp;
+    } else if (timestamp && typeof timestamp === 'object' && '$date' in timestamp) {
+      date = new Date(timestamp.$date);
+    } else {
+      return '-';
+    }
+    
+    if (isNaN(date.getTime())) return '-';
+    
+    return date.toLocaleString('vi-VN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
+  // Tính thời gian đỗ
+  const calculateDuration = (timeIn: string | Date | { $date: string } | null | undefined, timeOut?: string | Date | { $date: string } | null | undefined) => {
+    if (!timeIn) return '-';
+    
+    let startTime: Date;
+    let endTime: Date;
+    
+    // Parse timeIn
+    if (typeof timeIn === 'string') {
+      startTime = new Date(timeIn);
+    } else if (timeIn instanceof Date) {
+      startTime = timeIn;
+    } else if (timeIn && typeof timeIn === 'object' && '$date' in timeIn) {
+      startTime = new Date(timeIn.$date);
+    } else {
+      return '-';
+    }
+    
+    if (isNaN(startTime.getTime())) return '-';
+    
+    // Parse timeOut hoặc sử dụng thời gian hiện tại
+    if (timeOut) {
+      if (typeof timeOut === 'string') {
+        endTime = new Date(timeOut);
+      } else if (timeOut instanceof Date) {
+        endTime = timeOut;
+      } else if (timeOut && typeof timeOut === 'object' && '$date' in timeOut) {
+        endTime = new Date(timeOut.$date);
+      } else {
+        endTime = new Date();
+      }
+    } else {
+      endTime = new Date(); // Nếu chưa ra, tính từ bây giờ
+    }
+    
+    if (isNaN(endTime.getTime())) return '-';
+    
+    const diffMs = endTime.getTime() - startTime.getTime();
+    if (diffMs < 0) return '-';
+    
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
   };
 
   return (
@@ -270,10 +398,10 @@ const ParkingHistoryWithImages: React.FC = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Thời gian
+                  Thời gian vào/ra
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Hành động
+                  Trạng thái
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   RFID
@@ -321,15 +449,32 @@ const ParkingHistoryWithImages: React.FC = () => {
                 data && data.map((record) => (
                   <tr key={record._id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatTime(record.timeIn)}
+                      <div>
+                        <div className="font-medium text-green-600">
+                          📥 Vào: {record.timeIn ? formatTime(record.timeIn) : '-'}
+                        </div>
+                        {record.timeOut && (
+                          <div className="text-red-600 mt-1">
+                            📤 Ra: {formatTime(record.timeOut)}
+                          </div>
+                        )}
+                        {!record.timeOut && record.status === 'active' && (
+                          <div className="text-blue-600 mt-1">
+                            🚗 Đang đỗ
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                         record.status === 'active' 
                           ? 'bg-green-100 text-green-800' 
+                          : record.status === 'completed'
+                          ? 'bg-blue-100 text-blue-800'
                           : 'bg-red-100 text-red-800'
                       }`}>
-                        {record.status === 'active' ? 'Đang đỗ' : 'Đã ra'}
+                        {record.status === 'active' ? 'Đang đỗ' : 
+                         record.status === 'completed' ? 'Hoàn thành' : 'Đã ra'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -339,19 +484,66 @@ const ParkingHistoryWithImages: React.FC = () => {
                       {record.licensePlate || 'Không xác định'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {(record as any).image?.url ? (
-                        <img
-                          src={(record as any).image.url}
-                          alt={(record as any).action === 'in' ? 'Entry' : 'Exit'}
-                          className="h-12 w-20 object-cover rounded cursor-pointer border"
-                          onClick={() => setSelectedImage({ 
-                            url: (record as any).image!.url, 
-                            title: `${(record as any).action === 'in' ? 'Xe vào' : 'Xe ra'} - ${record.licensePlate || 'Không xác định'}` 
-                          })}
-                        />
-                      ) : (
-                        <span className="text-gray-400 text-sm">Không có ảnh</span>
-                      )}
+                      <div className="flex space-x-2">
+                        {/* Kiểm tra entryImage */}
+                        {(record as any).entryImage?.url && (
+                          <div className="relative">
+                            <img
+                              src={(record as any).entryImage.url}
+                              alt="Xe vào"
+                              className="h-12 w-16 object-cover rounded cursor-pointer border-2 border-green-200 hover:border-green-400"
+                              onClick={() => setSelectedImage({
+                                url: (record as any).entryImage!.url, 
+                                title: `Xe vào - ${record.licensePlate || 'Không xác định'} - ${formatTime(record.timeIn)}`
+                              })}
+                            />
+                            <span className="absolute -top-1 -right-1 bg-green-500 text-white text-xs px-1 rounded">
+                              Vào
+                            </span>
+                          </div>
+                        )}
+                        
+                        {/* Kiểm tra exitImage */}
+                        {(record as any).exitImage?.url && (
+                          <div className="relative">
+                            <img
+                              src={(record as any).exitImage.url}
+                              alt="Xe ra"
+                              className="h-12 w-16 object-cover rounded cursor-pointer border-2 border-red-200 hover:border-red-400"
+                              onClick={() => setSelectedImage({
+                                url: (record as any).exitImage!.url, 
+                                title: `Xe ra - ${record.licensePlate || 'Không xác định'} - ${record.timeOut ? formatTime(record.timeOut) : ''}`
+                              })}
+                            />
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1 rounded">
+                              Ra
+                            </span>
+                          </div>
+                        )}
+                        
+                        {/* Fallback: Kiểm tra field image chung */}
+                        {!(record as any).entryImage?.url && !(record as any).exitImage?.url && (record as any).image?.url && (
+                          <div className="relative">
+                            <img
+                              src={(record as any).image.url}
+                              alt="Hình ảnh"
+                              className="h-12 w-16 object-cover rounded cursor-pointer border-2 border-blue-200 hover:border-blue-400"
+                              onClick={() => setSelectedImage({
+                                url: (record as any).image!.url, 
+                                title: `Hình ảnh - ${record.licensePlate || 'Không xác định'}`
+                              })}
+                            />
+                            <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs px-1 rounded">
+                              Img
+                            </span>
+                          </div>
+                        )}
+                        
+                        {/* Không có ảnh */}
+                        {!(record as any).entryImage?.url && !(record as any).exitImage?.url && !(record as any).image?.url && (
+                          <span className="text-gray-400 text-sm">Không có ảnh</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       Camera {record.cameraIndex}
@@ -372,14 +564,13 @@ const ParkingHistoryWithImages: React.FC = () => {
                       }
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {record.status === 'completed' && record.currentDuration ? 
-                        record.currentDuration : 
-                        '-'
-                      }
+                      {calculateDuration(record.timeIn, record.timeOut)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <button
-                        onClick={() => viewRecordDetail(record._id || record.id!)}
+                        onClick={() => {
+                          viewRecordDetail(record._id || (record as any).id || '');
+                        }}
                         className="text-blue-600 hover:text-blue-900 font-medium"
                       >
                         👁️ Chi tiết
@@ -466,9 +657,31 @@ const ParkingHistoryWithImages: React.FC = () => {
                       <div><strong>RFID:</strong> {selectedRecord.rfid}</div>
                       <div><strong>Biển số:</strong> {selectedRecord.licensePlate || 'Không xác định'}</div>
                       <div><strong>Thời gian vào:</strong> {selectedRecord.timeIn ? formatTime(selectedRecord.timeIn) : '-'}</div>
-                      <div><strong>Thời gian ra:</strong> {selectedRecord.timeOut ? formatTime(selectedRecord.timeOut) : '-'}</div>
-                      <div><strong>Thời gian đỗ:</strong> {selectedRecord.durationFormatted || '-'}</div>
-                      <div><strong>Phí:</strong> {selectedRecord.fee ? `${selectedRecord.fee.toLocaleString('vi-VN')} VNĐ` : '-'}</div>
+                      <div><strong>Thời gian ra:</strong> {selectedRecord.timeOut ? formatTime(selectedRecord.timeOut) : 'Chưa ra'}</div>
+                      <div><strong>Thời gian đỗ:</strong> {calculateDuration(selectedRecord.timeIn, selectedRecord.timeOut)}</div>
+                      <div><strong>Phí:</strong> {selectedRecord.fee ? `${selectedRecord.fee.toLocaleString('vi-VN')} VNĐ` : 'Miễn phí'}</div>
+                      <div><strong>Trạng thái:</strong> 
+                        <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          selectedRecord.status === 'active' 
+                            ? 'bg-green-100 text-green-800' 
+                            : selectedRecord.status === 'completed'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {selectedRecord.status === 'active' ? 'Đang đỗ' : 
+                           selectedRecord.status === 'completed' ? 'Hoàn thành' : 'Đã ra'}
+                        </span>
+                      </div>
+                      <div><strong>Camera:</strong> Camera {selectedRecord.cameraIndex}</div>
+                      <div><strong>Loại user:</strong> 
+                        <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          selectedRecord.isRegisteredUser 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {selectedRecord.isRegisteredUser ? 'Đã đăng ký' : 'Khách lẻ'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -478,35 +691,52 @@ const ParkingHistoryWithImages: React.FC = () => {
                     <div className="space-y-4">
                       {selectedRecord.entryImage && (
                         <div>
-                          <div className="text-sm font-medium text-gray-700 mb-2">Xe vào:</div>
+                          <div className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs mr-2">
+                              📥 Xe vào
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {formatTime(selectedRecord.timeIn)}
+                            </span>
+                          </div>
                           <img
                             src={selectedRecord.entryImage.url}
                             alt="Xe vào"
-                            className="w-full h-32 object-cover rounded border cursor-pointer"
+                            className="w-full h-40 object-cover rounded border cursor-pointer hover:shadow-lg transition-shadow"
                             onClick={() => setSelectedImage({ 
                               url: selectedRecord.entryImage!.url, 
-                              title: 'Xe vào - ' + (selectedRecord.licensePlate || 'Không xác định')
+                              title: `Xe vào - ${selectedRecord.licensePlate || 'Không xác định'} - ${formatTime(selectedRecord.timeIn)}`
                             })}
                           />
                         </div>
                       )}
+                      
                       {selectedRecord.exitImage && (
                         <div>
-                          <div className="text-sm font-medium text-gray-700 mb-2">Xe ra:</div>
+                          <div className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+                            <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs mr-2">
+                              📤 Xe ra
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {selectedRecord.timeOut ? formatTime(selectedRecord.timeOut) : 'Chưa xác định'}
+                            </span>
+                          </div>
                           <img
                             src={selectedRecord.exitImage.url}
                             alt="Xe ra"
-                            className="w-full h-32 object-cover rounded border cursor-pointer"
+                            className="w-full h-40 object-cover rounded border cursor-pointer hover:shadow-lg transition-shadow"
                             onClick={() => setSelectedImage({ 
                               url: selectedRecord.exitImage!.url, 
-                              title: 'Xe ra - ' + (selectedRecord.licensePlate || 'Không xác định')
+                              title: `Xe ra - ${selectedRecord.licensePlate || 'Không xác định'} - ${selectedRecord.timeOut ? formatTime(selectedRecord.timeOut) : ''}`
                             })}
                           />
                         </div>
                       )}
+                      
                       {!selectedRecord.entryImage && !selectedRecord.exitImage && (
                         <div className="text-center text-gray-500 py-8">
-                          Không có hình ảnh
+                          <div className="text-4xl mb-2">📷</div>
+                          <div>Không có hình ảnh</div>
                         </div>
                       )}
                     </div>

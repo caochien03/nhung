@@ -93,6 +93,7 @@ export interface Subscription {
   price: number;
   status: "active" | "expired" | "cancelled" | "pending";
   vehicleLimit: number;
+  licensePlate: string;
   paymentStatus: "pending" | "paid" | "failed";
   paymentId?: string;
   autoRenew: boolean;

@@ -5,6 +5,7 @@ const subscriptionController = require("./subscriptionController");
 const recognizePlate = require("../utils/recognizePlate_fastapi");
 const { calculateFeeWithSubscription } = require("../utils/feeCalculator");
 const { uploadBase64Image } = require("../utils/cloudinaryHelper");
+const { findBestMatch } = require("../utils/licensePlateHelper");
 
 // Hàm tính độ tương đồng giữa 2 chuỗi (Levenshtein distance)
 function calculateSimilarity(str1, str2) {
@@ -75,11 +76,24 @@ exports.checkSubscriptionAndOpenGate = async (req, res) => {
             });
         }
 
-        // Tìm xe đã đăng ký
-        const vehicle = await Vehicle.findOne({
+        // Tìm xe đã đăng ký với fuzzy matching
+        let vehicle = await Vehicle.findOne({
             licensePlate: licensePlate.toUpperCase(),
             isActive: true
         }).populate("userId");
+
+        // Nếu không tìm thấy exact match, thử fuzzy matching
+        if (!vehicle) {
+            const allVehicles = await Vehicle.find({ isActive: true }).populate("userId");
+            const registeredPlates = allVehicles.map(v => v.licensePlate);
+            
+            const bestMatch = findBestMatch(licensePlate, registeredPlates, 0.75);
+            
+            if (bestMatch && bestMatch.isMatch) {
+                vehicle = allVehicles.find(v => v.licensePlate === bestMatch.registeredPlate);
+                console.log(`🔍 Fuzzy match found: OCR "${licensePlate}" → Registered "${bestMatch.registeredPlate}" (score: ${bestMatch.score.toFixed(3)})`);
+            }
+        }
 
         if (!vehicle || !vehicle.userId) {
             return res.json({
@@ -253,8 +267,8 @@ exports.autoCapture = async (req, res) => {
         // Đánh dấu đang xử lý
         processingCache.set(cacheKey, { timestamp: now, processing: true });
 
-        // Nhận diện biển số từ ảnh
-        let licensePlate = "";
+        // Nhận diện biển số từ ảnh hoặc lấy từ request body
+        let licensePlate = req.body.licensePlate || "";
         let uploadedImageData = null;
         
         if (imageData) {
@@ -273,8 +287,11 @@ exports.autoCapture = async (req, res) => {
                 // Tiếp tục xử lý mà không có ảnh
             }
             
-            // Nhận diện biển số
-            licensePlate = await recognizePlate(imageData);
+            // Nhận diện biển số từ ảnh (ghi đè licensePlate nếu có ảnh)
+            const recognizedPlate = await recognizePlate(imageData);
+            if (recognizedPlate) {
+                licensePlate = recognizedPlate;
+            }
         }
 
         if (cameraIndex === 1) {
@@ -286,10 +303,23 @@ exports.autoCapture = async (req, res) => {
             let subscriptionId = null;
             
             if (licensePlate) {
-                const vehicle = await Vehicle.findOne({
+                let vehicle = await Vehicle.findOne({
                     licensePlate: licensePlate.toUpperCase(),
                     isActive: true
                 }).populate("userId");
+
+                // Nếu không tìm thấy exact match, thử fuzzy matching
+                if (!vehicle) {
+                    const allVehicles = await Vehicle.find({ isActive: true }).populate("userId");
+                    const registeredPlates = allVehicles.map(v => v.licensePlate);
+                    
+                    const bestMatch = findBestMatch(licensePlate, registeredPlates, 0.75);
+                    
+                    if (bestMatch && bestMatch.isMatch) {
+                        vehicle = allVehicles.find(v => v.licensePlate === bestMatch.registeredPlate);
+                        console.log(`🔍 Fuzzy match: "${licensePlate}" → "${bestMatch.registeredPlate}"`);
+                    }
+                }
 
                 if (vehicle && vehicle.userId) {
                     userId = vehicle.userId._id;
@@ -300,36 +330,12 @@ exports.autoCapture = async (req, res) => {
                         licensePlate
                     );
                     
-                    if (subscriptionCheck.hasSubscription && subscriptionCheck.canUse) {
+                    if (subscriptionCheck.hasSubscription) {
                         paymentType = "subscription";
                         subscriptionId = subscriptionCheck.subscription._id;
                         
                         // Log thông tin sử dụng vé tháng
-                        console.log(`✅ Subscription used - User: ${vehicle.userId.username}, 
-                                   Vehicle: ${licensePlate}, 
-                                   Remaining days: ${subscriptionCheck.remainingDays},
-                                   Vehicles parked: ${subscriptionCheck.currentlyParked}/${subscriptionCheck.vehicleLimit}`);
-                    } else if (subscriptionCheck.hasSubscription && !subscriptionCheck.canUse) {
-                        // Có vé tháng nhưng không thể sử dụng (vượt quá giới hạn)
-                        console.log(`⚠️ Subscription limit exceeded - ${subscriptionCheck.reason}`);
-                        
-                        res.json({
-                            message: `Vehicle limit exceeded: ${subscriptionCheck.reason}`,
-                            action: "IN_SUBSCRIPTION_LIMIT_EXCEEDED",
-                            uid: uid,
-                            licensePlate: licensePlate,
-                            cameraIndex: cameraIndex,
-                            subscriptionInfo: {
-                                hasSubscription: true,
-                                canUse: false,
-                                reason: subscriptionCheck.reason,
-                                vehicleLimit: subscriptionCheck.subscription?.vehicleLimit,
-                                currentlyParked: subscriptionCheck.currentlyParked
-                            },
-                            shouldOpenGate: false,
-                            timestamp: new Date(),
-                        });
-                        return;
+                        console.log(`✅ Subscription used - User: ${vehicle.userId.username}, Vehicle: ${licensePlate}, Days left: ${subscriptionCheck.remainingDays}`);
                     }
                 }
             }
@@ -376,22 +382,35 @@ exports.autoCapture = async (req, res) => {
             }).sort({ timeIn: -1 });
 
             if (existingRecord) {
-                // Kiểm tra biển số có khớp nhau không
+                // Kiểm tra biển số có khớp nhau không sử dụng fuzzy matching
                 const entryPlate = existingRecord.licensePlate || "";
                 const exitPlate = licensePlate || "";
 
-                // Hàm so sánh biển số (bỏ qua khoảng trắng và ký tự đặc biệt)
-                const normalizePlate = (plate) =>
-                    plate.replace(/[\s*-]/g, "").toUpperCase();
-                const normalizedEntry = normalizePlate(entryPlate);
-                const normalizedExit = normalizePlate(exitPlate);
+                let isPlateMatch = false;
+                let matchScore = 0;
 
-                // Kiểm tra độ tương đồng (cho phép sai khác nhỏ do OCR không chính xác)
-                const similarity = calculateSimilarity(
-                    normalizedEntry,
-                    normalizedExit
-                );
-                const isPlateMatch = similarity >= 0.7; // 70% giống nhau
+                if (entryPlate && exitPlate) {
+                    // Sử dụng fuzzy matching để kiểm tra
+                    const matchResult = findBestMatch(exitPlate, [entryPlate], 0.7);
+                    if (matchResult && matchResult.isMatch) {
+                        isPlateMatch = true;
+                        matchScore = matchResult.score;
+                        console.log(`🔍 Exit plate match: "${exitPlate}" → "${entryPlate}" (score: ${matchScore.toFixed(3)})`);
+                    } else {
+                        // Fallback to old similarity calculation
+                        const normalizePlate = (plate) =>
+                            plate.replace(/[\s*-]/g, "").toUpperCase();
+                        const normalizedEntry = normalizePlate(entryPlate);
+                        const normalizedExit = normalizePlate(exitPlate);
+                        
+                        matchScore = calculateSimilarity(normalizedEntry, normalizedExit);
+                        isPlateMatch = matchScore >= 0.7;
+                    }
+                } else {
+                    // Nếu thiếu thông tin biển số, cho phép đi qua
+                    isPlateMatch = true;
+                    matchScore = 1.0;
+                }
 
                 if (!isPlateMatch && entryPlate && exitPlate) {
                     // Biển số không khớp - cảnh báo bảo mật
@@ -401,7 +420,7 @@ exports.autoCapture = async (req, res) => {
                         uid: uid,
                         entryPlate: entryPlate,
                         exitPlate: exitPlate,
-                        similarity: Math.round(similarity * 100) + "%",
+                        similarity: Math.round(matchScore * 100) + "%",
                         cameraIndex: cameraIndex,
                         warning: "Biển số vào và ra không khớp!",
                         timestamp: new Date(),
@@ -499,10 +518,11 @@ exports.autoCapture = async (req, res) => {
                     message: hasSubscription ? "Vehicle exited - Subscription used" : "Vehicle exited - Payment required",
                     action: hasSubscription ? "OUT_SUBSCRIPTION" : "OUT_PAYMENT_REQUIRED",
                     uid: uid,
+                    licensePlate: exitPlate || entryPlate, // Hiển thị biển số
                     entryPlate: entryPlate,
                     exitPlate: exitPlate,
                     plateMatch: isPlateMatch ? "✓ Khớp" : "⚠ Không khớp",
-                    similarity: Math.round(similarity * 100) + "%",
+                    similarity: Math.round(matchScore * 100) + "%",
                     cameraIndex: cameraIndex,
                     timeIn: timeIn,
                     timeOut: timeOut,
