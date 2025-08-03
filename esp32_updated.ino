@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <SPI.h>
 #include <MFRC522.h>
 #include <WiFi.h>
@@ -11,8 +12,9 @@
 const char* ssid = "Hung 6G";
 const char* password = "hung12081961";
 
-// Backend server URL - ĐÃ THAY ĐỔI
-const char* serverUrl = "http://192.168.102.6:8080/api/esp32/uid";
+// Backend server URL - Current Network
+const char* serverUrl = "http://192.168.102.9:8080/api/esp32/uid";
+
 // RFID pins for RC522 #1
 #define RST_PIN_1    22
 #define SS_PIN_1     5
@@ -50,6 +52,12 @@ unsigned long lastReadTime1 = 0;
 unsigned long lastReadTime2 = 0;
 const unsigned long READ_DELAY = 2000; // 2 seconds delay between reads
 
+// Function prototypes
+bool sendDataToBackend(int readerId, String cardId);
+void blinkLedSuccess();
+void operateServo(int servoNumber);
+void beepCardDetected();
+
 void setup() {
   Serial.begin(115200);
 
@@ -66,9 +74,19 @@ void setup() {
   servo1.write(0);
   servo2.write(0);
 
-  // Initialize LED
+  // Initialize BUZZER (was LED)
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
+  
+  // TEST BUZZER - Sẽ kêu khi khởi động
+  Serial.println("Testing buzzer...");
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(300);
+    digitalWrite(LED_PIN, LOW);
+    delay(300);
+  }
+  Serial.println("Buzzer test done.");
 
   // Initialize LCD
   Wire.begin(SDA_PIN, SCL_PIN);
@@ -81,11 +99,98 @@ void setup() {
   lcd.print("Initializing...");
 
   // Connect to WiFi
+  Serial.println("\n=== ESP32 WiFi Debug ===");
+  Serial.print("Target SSID: '");
+  Serial.print(ssid);
+  Serial.println("'");
+  Serial.print("Password length: ");
+  Serial.println(strlen(password));
+  
+  // Set WiFi mode first
+  WiFi.mode(WIFI_STA);
+  delay(100);
+  
+  // Scan networks first to debug
+  Serial.println("Scanning for WiFi networks...");
+  int n = WiFi.scanNetworks();
+  Serial.print("Found ");
+  Serial.print(n);
+  Serial.println(" networks:");
+  
+  bool found_target = false;
+  for (int i = 0; i < n; ++i) {
+    String network_name = WiFi.SSID(i);
+    Serial.print("  ");
+    Serial.print(i + 1);
+    Serial.print(": '");
+    Serial.print(network_name);
+    Serial.print("' RSSI: ");
+    Serial.print(WiFi.RSSI(i));
+    Serial.print(" dBm, Encryption: ");
+    Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "Open" : "Secured");
+    
+    if (network_name == String(ssid)) {
+      found_target = true;
+      Serial.println("    ^^ TARGET NETWORK FOUND!");
+    }
+  }
+  
+  if (!found_target) {
+    Serial.println("\n⚠️  TARGET NETWORK NOT FOUND!");
+    Serial.println("Double-check:");
+    Serial.println("1. iPhone Personal Hotspot is ON");
+    Serial.println("2. SSID name is exactly: 'iPhone'");
+    Serial.println("3. Allow others to join is enabled");
+    Serial.println("4. ESP32 is close to iPhone");
+  }
+  
+  // Try to connect
+  Serial.println("\nAttempting WiFi connection...");
   WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
+  
+  int wifi_retry = 0;
+  while (WiFi.status() != WL_CONNECTED && wifi_retry < 20) { // 10 second timeout
     delay(500);
     Serial.print(".");
+    wifi_retry++;
+    
+    // Print status every 5 retries
+    if (wifi_retry % 5 == 0) {
+      Serial.println();
+      Serial.print("Status Code: ");
+      Serial.print(WiFi.status());
+      Serial.print(" (");
+      switch(WiFi.status()) {
+        case WL_IDLE_STATUS: Serial.print("IDLE"); break;
+        case WL_NO_SSID_AVAIL: Serial.print("NO_SSID_AVAIL"); break;
+        case WL_SCAN_COMPLETED: Serial.print("SCAN_COMPLETED"); break;
+        case WL_CONNECTED: Serial.print("CONNECTED"); break;
+        case WL_CONNECT_FAILED: Serial.print("CONNECT_FAILED"); break;
+        case WL_CONNECTION_LOST: Serial.print("CONNECTION_LOST"); break;
+        case WL_DISCONNECTED: Serial.print("DISCONNECTED"); break;
+        default: Serial.print("UNKNOWN"); break;
+      }
+      Serial.println(")");
+    }
+  }
+  
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println();
+    Serial.println("WiFi connection failed! Check:");
+    Serial.println("1. SSID name is correct");
+    Serial.println("2. Password is correct"); 
+    Serial.println("3. WiFi is 2.4GHz (not 5GHz)");
+    Serial.println("4. WiFi is not hidden");
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("WiFi Failed!");
+    lcd.setCursor(0, 1);
+    lcd.print("Check settings");
+    
+    while(true) { // Stop here if WiFi fails
+      delay(1000);
+    }
   }
 
   Serial.println();
@@ -134,19 +239,20 @@ void loop() {
         Serial.print("RFID #1 Card ID: ");
         Serial.println(cardId1);
 
+        // KÊU CÒI NGAY KHI QUẸT THẺ
+        beepCardDetected();
+
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("RFID #1: ");
+        lcd.print("Checking...");
         lcd.setCursor(0, 1);
         lcd.print(cardId1.substring(0, 8));
 
-        servo1.write(90);
-        delay(1000);
-        servo1.write(0);
-
-        blinkLedSuccess();  // ✅ LED nháy 2 lần
-
-        sendDataToBackend(1, cardId1);  // Camera 1 = RFID 1
+        // Gửi đến backend và chỉ quay servo khi thành công
+        if (sendDataToBackend(1, cardId1)) {
+          operateServo(1);
+          blinkLedSuccess();
+        }
       }
 
       rfid1.PICC_HaltA();
@@ -171,19 +277,20 @@ void loop() {
         Serial.print("RFID #2 Card ID: ");
         Serial.println(cardId2);
 
+        // KÊU CÒI NGAY KHI QUẸT THẺ
+        beepCardDetected();
+
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("RFID #2: ");
+        lcd.print("Checking...");
         lcd.setCursor(0, 1);
         lcd.print(cardId2.substring(0, 8));
 
-        servo2.write(90);
-        delay(1000);
-        servo2.write(0);
-
-        blinkLedSuccess();  // ✅ LED nháy 2 lần
-
-        sendDataToBackend(2, cardId2);  // Camera 2 = RFID 2
+        // Gửi đến backend và chỉ quay servo khi thành công
+        if (sendDataToBackend(2, cardId2)) {
+          operateServo(2);
+          blinkLedSuccess();
+        }
       }
 
       rfid2.PICC_HaltA();
@@ -194,7 +301,7 @@ void loop() {
   delay(100);
 }
 
-void sendDataToBackend(int readerId, String cardId) {
+bool sendDataToBackend(int readerId, String cardId) {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     http.begin(serverUrl);
@@ -227,34 +334,43 @@ void sendDataToBackend(int readerId, String cardId) {
       if (!error && responseDoc["message"] == "UID received successfully") {
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("UID sent!");
+        lcd.print("Access Granted!");
         lcd.setCursor(0, 1);
         lcd.print("Camera #" + String(readerId));
+        http.end();
+        return true;  // Thành công
       } else {
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("Server Error!");
+        lcd.print("Access Denied!");
         lcd.setCursor(0, 1);
-        lcd.print("Check response");
+        lcd.print("Invalid card");
+        http.end();
+        delay(3000);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Ready to scan");
+        lcd.setCursor(0, 1);
+        lcd.print("RFID cards...");
+        return false;  // Thất bại
       }
     } else {
       Serial.print("Error code: ");
       Serial.println(httpResponseCode);
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Send failed!");
+      lcd.print("Connection Error!");
       lcd.setCursor(0, 1);
       lcd.print("Error: " + String(httpResponseCode));
+      http.end();
+      delay(3000);
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Ready to scan");
+      lcd.setCursor(0, 1);
+      lcd.print("RFID cards...");
+      return false;  // Thất bại
     }
-
-    http.end();
-
-    delay(3000);
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Ready to scan");
-    lcd.setCursor(0, 1);
-    lcd.print("RFID cards...");
   } else {
     Serial.println("WiFi not connected!");
     lcd.clear();
@@ -262,14 +378,67 @@ void sendDataToBackend(int readerId, String cardId) {
     lcd.print("WiFi Error!");
     lcd.setCursor(0, 1);
     lcd.print("Reconnecting...");
+    return false;  // Thất bại
   }
 }
 
 void blinkLedSuccess() {
   for (int i = 0; i < 2; i++) {
+    // Method 1: Digital ON/OFF (for Active Buzzer)
     digitalWrite(LED_PIN, HIGH);
     delay(200);
     digitalWrite(LED_PIN, LOW);
     delay(200);
+    
+    // Method 2: PWM Tone (for Passive Buzzer) - Comment out if not needed
+    // tone(LED_PIN, 2000, 200);  // 2000Hz for 200ms
+    // delay(400);
   }
-} 
+}
+
+void operateServo(int servoNumber) {
+  Serial.print("Operating servo #");
+  Serial.println(servoNumber);
+  
+  if (servoNumber == 1) {
+    servo1.write(90);
+    delay(1000);
+    servo1.write(0);
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Gate #1 Opened!");
+    lcd.setCursor(0, 1);
+    lcd.print("Welcome!");
+  } else if (servoNumber == 2) {
+    servo2.write(90);
+    delay(1000);
+    servo2.write(0);
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Gate #2 Opened!");
+    lcd.setCursor(0, 1);
+    lcd.print("Welcome!");
+  }
+  
+  delay(2000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Ready to scan");
+  lcd.setCursor(0, 1);
+  lcd.print("RFID cards...");
+}
+
+void beepCardDetected() {
+  // Tiếng còi ngắn để báo hiệu đã quẹt thẻ
+  Serial.println("BEEP: Card detected!");
+  
+  // Method 1: Digital ON/OFF (for Active Buzzer)
+  digitalWrite(LED_PIN, HIGH);
+  delay(100);  // Ngắn hơn để phân biệt với tiếng thành công
+  digitalWrite(LED_PIN, LOW);
+  
+  // Method 2: PWM Tone (for Passive Buzzer) - Uncomment if needed
+  // tone(LED_PIN, 1000, 100);  // 1000Hz for 100ms, khác với tiếng thành công
+}
