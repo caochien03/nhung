@@ -1,151 +1,155 @@
 // Types for Smart Parking System
 
 export interface User {
-  _id?: string;
-  id?: string;
-  username: string;
-  email: string;
-  phone?: string;
-  password?: string; // For registration
-  role: "admin" | "staff" | "user";
-  licensePlates?: string[];
-  balance: number;
-  isActive?: boolean;
-  lastLogin?: Date;
-  createdAt: Date;
-  updatedAt: Date;
+    _id?: string;
+    id?: string;
+    username: string;
+    email: string;
+    phone?: string;
+    password?: string; // For registration
+    role: "admin" | "staff" | "user";
+    licensePlates?: string[];
+    balance: number;
+    isActive?: boolean;
+    lastLogin?: Date;
+    createdAt: Date;
+    updatedAt: Date;
 }
 
 export interface ParkingRecord {
-  id?: string;
-  _id?: string;
-  rfid: string;
-  licensePlate: string;
-  userId?: string | User; // Có thể là string hoặc populated User object
-  timeIn: Date | string;
-  timeOut?: Date | string;
-  fee?: number;
-  originalFee?: number;
-  feeType?: string; // Loại phí: "Theo giờ (35k)", "Qua đêm (50k)", "Miễn phí (Vé tháng)"
-  subscriptionDiscount?: number;
-  subscriptionId?: string;
-  paymentType?: "hourly" | "subscription" | "mixed";
-  cameraIndex: number;
-  status: "active" | "completed" | "cancelled";
-  paymentStatus: "pending" | "paid" | "failed";
-  paymentMethod?: "qr" | "cash" | "balance" | "subscription";
-  imageUrl?: string;
-  action?: "in" | "out"; // For API response formatting
-  image?: {
-    url: string;
-    publicId: string;
-    format: string;
-    width: number;
-    height: number;
-  };
-  entryImage?: {
-    url: string;
-    publicId: string;
-    format: string;
-    width: number;
-    height: number;
-  };
-  exitImage?: {
-    url: string;
-    publicId: string;
-    format: string;
-    width: number;
-    height: number;
-  };
-  isRegisteredUser?: boolean;
-  currentDuration?: string; // Thời gian đỗ hiện tại (từ backend)
-  notes?: string;
+    id?: string;
+    _id?: string;
+    rfid: string;
+    licensePlate: string;
+    userId?: string | User; // Có thể là string hoặc populated User object
+    timeIn: Date | string;
+    timeOut?: Date | string;
+    fee?: number;
+    originalFee?: number;
+    feeType?: string; // Loại phí: "Theo giờ (35k)", "Qua đêm (50k)", "Miễn phí (Vé tháng)"
+    subscriptionDiscount?: number;
+    subscriptionId?: string;
+    paymentType?: "hourly" | "subscription" | "mixed";
+    cameraIndex: number;
+    status: "active" | "completed" | "cancelled";
+    paymentStatus: "pending" | "paid" | "failed";
+    paymentMethod?: "qr" | "cash" | "balance" | "subscription";
+    imageUrl?: string;
+    // ✅ BACKEND API FORMAT FIELDS
+    action?: "in" | "out"; // For API response formatting
+    timestamp?: Date | string; // Thời gian action (in/out) từ backend
+    duration?: number; // Thời gian đỗ (milliseconds) từ backend
+    durationFormatted?: string; // Thời gian đỗ formatted từ backend
+    image?: {
+        url: string;
+        publicId: string;
+        format: string;
+        width: number;
+        height: number;
+    };
+    entryImage?: {
+        url: string;
+        publicId: string;
+        format: string;
+        width: number;
+        height: number;
+    };
+    exitImage?: {
+        url: string;
+        publicId: string;
+        format: string;
+        width: number;
+        height: number;
+    };
+    isRegisteredUser?: boolean;
+    currentDuration?: string; // Thời gian đỗ hiện tại (từ backend)
+    notes?: string;
 }
 
 export interface Vehicle {
-  id?: string;
-  _id?: string;
-  licensePlate: string;
-  userId: string;
-  vehicleType: "car" | "truck" | "bus";
-  isRegistered: boolean;
-  registrationDate: Date | string;
+    id?: string;
+    _id?: string;
+    licensePlate: string;
+    userId: string;
+    vehicleType: "car" | "truck" | "bus";
+    isRegistered: boolean;
+    registrationDate: Date | string;
 }
 
 export interface Payment {
-  id?: string;
-  _id?: string;
-  parkingRecordId: string;
-  amount: number;
-  method: "qr" | "cash" | "balance" | "subscription";
-  status: "pending" | "completed" | "failed";
-  qrCode?: string;
-  createdAt: Date;
+    id?: string;
+    _id?: string;
+    parkingRecordId: string;
+    amount: number;
+    method: "qr" | "cash" | "balance" | "subscription";
+    status: "pending" | "completed" | "failed";
+    qrCode?: string;
+    createdAt: Date;
 }
 
 export interface Subscription {
-  id?: string;
-  _id?: string;
-  userId: string;
-  type: "monthly" | "quarterly" | "yearly";
-  startDate: Date | string;
-  endDate: Date | string;
-  price: number;
-  status: "active" | "expired" | "cancelled" | "pending";
-  vehicleLimit: number;
-  licensePlate: string;
-  paymentStatus: "pending" | "paid" | "failed";
-  paymentId?: string;
-  autoRenew: boolean;
-  notes?: string;
-  createdAt: Date | string;
-  updatedAt: Date | string;
+    id?: string;
+    _id?: string;
+    userId: string;
+    type: "monthly" | "quarterly" | "yearly";
+    startDate: Date | string;
+    endDate: Date | string;
+    price: number;
+    status: "active" | "expired" | "cancelled" | "pending";
+    vehicleLimit: number;
+    licensePlate: string;
+    paymentStatus: "pending" | "paid" | "failed";
+    paymentId?: string;
+    autoRenew: boolean;
+    notes?: string;
+    createdAt: Date | string;
+    updatedAt: Date | string;
 }
 
 export interface Revenue {
-  date: string;
-  totalRevenue: number;
-  registeredUsers: number;
-  walkInUsers: number;
-  totalVehicles: number;
+    date: string;
+    totalRevenue: number;
+    registeredUsers: number;
+    walkInUsers: number;
+    totalVehicles: number;
 }
 
 export interface CameraFeed {
-  id: number;
-  name: string;
-  status: "online" | "offline";
-  lastImage?: string;
-  lastUpdate: Date;
+    id: number;
+    name: string;
+    status: "online" | "offline";
+    lastImage?: string;
+    lastUpdate: Date;
 }
 
 export interface BarrieControl {
-  id: number;
-  name: string;
-  status: "open" | "closed" | "error";
-  lastAction: Date;
+    id: number;
+    name: string;
+    status: "open" | "closed" | "error";
+    lastAction: Date;
 }
 
 export interface DashboardStats {
-  totalRevenue: number;
-  todayRevenue: number;
-  activeParkings: number;
-  totalVehicles: number;
-  registeredUsers: number;
-  walkInUsers: number;
-  // **THÊM CAPACITY THÔNG TIN**
-  parkingCapacity?: {
-    current: number;
-    maximum: number;
-    available: number;
-    occupancyRate: number;
-    isFull: boolean;
-    status: "FULL" | "ALMOST_FULL" | "AVAILABLE";
-  };
+    totalRevenue: number;
+    todayRevenue: number;
+    activeParkings: number;
+    totalVehicles: number;
+    registeredUsers: number;
+    walkInUsers: number;
+    // **THÊM CAPACITY THÔNG TIN**
+    parkingCapacity?: {
+        current: number;
+        maximum: number;
+        available: number;
+        occupancyRate: number;
+        isFull: boolean;
+        status: "FULL" | "ALMOST_FULL" | "AVAILABLE";
+    };
 }
 
 export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  message?: string;
-  error?: string;
+    success: boolean;
+    data?: T;
+    message?: string;
+    error?: string;
 }
