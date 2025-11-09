@@ -435,8 +435,12 @@ exports.autoCapture = async (req, res) => {
                     action,
                     cameraIndex
                 );
+                const storageLabel =
+                    uploadedImageData?.storage === "cloudinary"
+                        ? "Cloudinary"
+                        : "local";
                 console.log(
-                    `📸 Image uploaded to Cloudinary: ${uploadedImageData.url}`
+                    `📸 Image saved to ${storageLabel}: ${uploadedImageData.url}`
                 );
             } catch (uploadError) {
                 console.error("Error uploading image:", uploadError);

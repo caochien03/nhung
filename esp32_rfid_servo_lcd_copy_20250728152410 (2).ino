@@ -62,6 +62,7 @@ bool sendDataToBackendAndWait(int readerId, String cardId);
 void blinkLedSuccess();
 float getDistance();
 void waitForVehicleToPass(Servo &servo);
+bool waitGateOpenByUid(String uid);
 
 void setup() {
   Serial.begin(115200);
@@ -481,7 +482,7 @@ bool sendDataToBackendAndWait(int readerId, String cardId) {
   HTTPClient http;
   http.begin(serverUrl);
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(5000); // Timeout 5 giây
+  http.setTimeout(10000); // Tăng timeout 10 giây
   
   StaticJsonDocument<200> doc;
   doc["uid"] = cardId;
@@ -515,10 +516,19 @@ bool sendDataToBackendAndWait(int readerId, String cardId) {
       if (message == "access_granted" || status == "granted" || message == "UID received successfully") {
         Serial.println("✅ Server OK - Access Granted");
         return true;
-      } else {
-        Serial.println("❌ Server denied access");
-        return false;
       }
+
+      // Nếu đang chờ thanh toán, chuyển sang chế độ poll lệnh mở cổng
+      if (status == "pending_payment") {
+        Serial.println("⏳ Pending payment - polling gate command...");
+        http.end();
+        bool opened = waitGateOpenByUid(cardId);
+        Serial.println(opened ? "✅ Gate command received" : "❌ No gate command - timeout");
+        return opened;
+      }
+
+      Serial.println("❌ Server denied access");
+      return false;
     } else {
       Serial.println("❌ JSON parse error");
       return false;
@@ -529,6 +539,38 @@ bool sendDataToBackendAndWait(int readerId, String cardId) {
     http.end();
     return false;
   }
+}
+
+// Poll backend để lấy lệnh mở cổng theo UID sau khi staff xác nhận
+bool waitGateOpenByUid(String uid) {
+  unsigned long deadline = millis() + 60000; // chờ tối đa 60s
+  while (millis() < deadline) {
+    if (WiFi.status() != WL_CONNECTED) return false;
+
+    // Xây URL từ serverUrl: thay "/uid" bằng "/check-gate-command/<uid>"
+    String base = String(serverUrl);
+    int p = base.lastIndexOf('/') ;
+    if (p <= 0) return false;
+    String pollUrl = base.substring(0, p) + "/check-gate-command/" + uid;
+
+    HTTPClient http;
+    http.begin(pollUrl);
+    http.setTimeout(7000);
+    int code = http.GET();
+    if (code > 0) {
+      String body = http.getString();
+      StaticJsonDocument<200> doc;
+      if (deserializeJson(doc, body) == DeserializationError::Ok) {
+        if (doc["shouldOpen"] == true) {
+          http.end();
+          return true; // mở cổng
+        }
+      }
+    }
+    http.end();
+    delay(1500); // đợi trước khi poll lại
+  }
+  return false;
 }
 
 // Hàm đọc cảm biến siêu âm (HC-SR04)

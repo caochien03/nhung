@@ -4,6 +4,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const path = require("path");
 
 // Import routes
 const parkingRoutes = require("./routes/parking");
@@ -57,6 +58,12 @@ app.use(
 // Body parsing middleware
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
+
+// Serve local uploads when IMAGE_STORAGE=local
+if ((process.env.IMAGE_STORAGE || "").toLowerCase() === "local") {
+  const uploadsDir = path.join(__dirname, "uploads");
+  app.use("/uploads", express.static(uploadsDir));
+}
 
 // Health check route
 app.get("/health", (req, res) => {
